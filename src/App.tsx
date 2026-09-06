@@ -37,6 +37,7 @@ import { UsersView } from './components/UsersView';
 import { PaymentModal } from './components/PaymentModal';
 import { CustomerLedgerModal } from './components/CustomerLedgerModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
+import { Phone, Mail, Code2 } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<SystemUser | null>(() => getLocalActiveUser());
@@ -452,6 +453,41 @@ export default function App() {
               />
             )}
           </main>
+
+          {/* Dynamic Developer Footer */}
+          <footer className="border-t border-slate-200/80 bg-white/90 backdrop-blur-sm py-4 mt-12">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-800">India Automobiles</span>
+                <span>&bull;</span>
+                <span>Proprietor: <strong className="text-slate-700">Khaja Mungle</strong> (8055650977)</span>
+              </div>
+              <div className="inline-flex flex-wrap items-center gap-2.5 bg-slate-50 border border-slate-200 px-3.5 py-1.5 rounded-full shadow-sm">
+                <div className="flex items-center gap-1 font-semibold text-slate-800">
+                  <Code2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Developed by <strong className="text-blue-900 font-bold">Mazhar Sayyed</strong></span>
+                </div>
+                <span className="text-slate-300">&bull;</span>
+                <a
+                  href="tel:9975603455"
+                  className="flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-medium transition-colors"
+                  title="Call Mazhar Sayyed"
+                >
+                  <Phone className="w-3 h-3 text-emerald-600" />
+                  <span>9975603455</span>
+                </a>
+                <span className="text-slate-300">&bull;</span>
+                <a
+                  href="mailto:mazharausa@gmail.com"
+                  className="flex items-center gap-1 text-sky-700 hover:text-sky-900 font-medium transition-colors"
+                  title="Email Mazhar Sayyed"
+                >
+                  <Mail className="w-3 h-3 text-sky-600" />
+                  <span>mazharausa@gmail.com</span>
+                </a>
+              </div>
+            </div>
+          </footer>
         </>
       )}
 
