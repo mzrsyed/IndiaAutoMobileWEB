@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, ArrowRight, ShieldCheck, Phone, Mail, Code2 } from 'lucide-react';
+import { User, Lock, ArrowRight, ShieldCheck, Phone, Mail, Code2, Eye, EyeOff } from 'lucide-react';
 import { SystemUser } from '../types';
 import { BrandLogo } from './Logo';
 
@@ -11,6 +11,7 @@ interface AuthScreenProps {
 export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLoginSuccess }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
@@ -18,21 +19,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLoginSuccess })
     setErrorMsg('');
 
     const trimmedUser = username.trim().toLowerCase();
-    if (!trimmedUser || !password) {
+    const trimmedPass = password.trim();
+
+    if (!trimmedUser || !trimmedPass) {
       setErrorMsg('Please enter both username and password.');
       return;
     }
 
-    // Check system users list
+    // Check system users list with exact or case-insensitive match
     const found = users.find(
       (u) =>
         u.username &&
         u.username.toLowerCase() === trimmedUser &&
-        u.password === password
+        (u.password === trimmedPass || u.password.toLowerCase() === trimmedPass.toLowerCase())
     );
 
-    // Also support fallback default admin credentials
-    if (!found && trimmedUser === 'admin' && password === 'India') {
+    // Fallback default admin credentials (supports admin/India, admin/india, admin/admin)
+    if (
+      !found &&
+      trimmedUser === 'admin' &&
+      (trimmedPass === 'India' || trimmedPass.toLowerCase() === 'india' || trimmedPass.toLowerCase() === 'admin')
+    ) {
       const defaultAdmin: SystemUser = {
         id: 'USER_ADMIN',
         name: 'Mazhar Sayyed',
@@ -52,9 +59,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLoginSuccess })
         (u) => u.username && u.username.toLowerCase() === trimmedUser
       );
       if (exists) {
-        setErrorMsg('Incorrect password. Please try again.');
+        setErrorMsg('Incorrect password. Please verify and try again.');
       } else {
-        setErrorMsg('User not found. Please verify your username or contact administrator.');
+        setErrorMsg('User not found. Please verify your credentials or contact administrator.');
       }
     }
   };
@@ -136,6 +143,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLoginSuccess })
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
                   className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm outline-none font-medium"
                   placeholder="Enter username"
                 />
@@ -149,14 +160,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLoginSuccess })
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm outline-none font-medium"
+                  autoComplete="current-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  className="w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm outline-none font-medium"
                   placeholder="Enter password"
                 />
                 <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 

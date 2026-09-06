@@ -152,16 +152,22 @@ export function getLocalUsers(): SystemUser[] {
 }
 
 export function setLocalActiveUser(user: SystemUser | null): void {
-  if (user) {
-    sessionStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(user));
-  } else {
-    sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+  try {
+    if (user) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(user));
+      sessionStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+      sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+    }
+  } catch {
+    // Graceful storage fallback
   }
 }
 
 export function getLocalActiveUser(): SystemUser | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEYS.ACTIVE_USER);
+    const raw = sessionStorage.getItem(STORAGE_KEYS.ACTIVE_USER) || localStorage.getItem(STORAGE_KEYS.ACTIVE_USER);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
