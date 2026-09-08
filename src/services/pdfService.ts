@@ -13,7 +13,7 @@ export async function generateInvoicePDF(sale: SaleRecord): Promise<void> {
   const logoImg = await getLogoPngDataUrl();
 
   // 1. Watermark Background
-  if (logoImg) {
+  if (logoImg && logoImg.startsWith('data:image/png')) {
     try {
       doc.saveGraphicsState();
       const GState = (doc as unknown as { GState?: new (options: { opacity: number }) => unknown }).GState;
@@ -28,7 +28,7 @@ export async function generateInvoicePDF(sale: SaleRecord): Promise<void> {
   }
 
   // 2. Header with Logo & Brand Text
-  if (logoImg) {
+  if (logoImg && logoImg.startsWith('data:image/png')) {
     try {
       doc.addImage(logoImg, 'PNG', 14, 12, 22, 22, undefined, 'FAST');
     } catch (err) {
@@ -132,7 +132,7 @@ export async function generateLedgerPDF(
 
   const logoImg = await getLogoPngDataUrl();
 
-  if (logoImg) {
+  if (logoImg && logoImg.startsWith('data:image/png')) {
     try {
       doc.saveGraphicsState();
       const GState = (doc as unknown as { GState?: new (options: { opacity: number }) => unknown }).GState;
@@ -146,7 +146,7 @@ export async function generateLedgerPDF(
     }
   }
 
-  if (logoImg) {
+  if (logoImg && logoImg.startsWith('data:image/png')) {
     try {
       doc.addImage(logoImg, 'PNG', 14, 12, 22, 22, undefined, 'FAST');
     } catch (err) {

@@ -174,7 +174,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const paidVal = parseFloat(amountPaid) || 0;
   const balanceVal = Math.max(0, grandTotal - paidVal);
 
-  const handleSubmitBilling = (e: React.FormEvent) => {
+  const handleSubmitBilling = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = customerName.trim();
     const cleanContact = customerContact.replace(/\D/g, '');
@@ -210,12 +210,16 @@ export const BillingView: React.FC<BillingViewProps> = ({
       generatedBy: currentUser ? currentUser.name : 'Admin'
     };
 
-    onProcessSale(sale);
+    await onProcessSale(sale);
     setLastSale(sale);
-    onShowToast('Bill created and transaction recorded successfully!', 'success');
+    onShowToast('Bill created and stock updated successfully!', 'success');
 
     // Reset cart and form
     setCart([]);
+    setSelectedItemId('');
+    setSearchItemQuery('');
+    setItemQty(1);
+    setItemDisc(0);
     setOverallDiscountPercent(0);
     setPaymentMode('Cash');
     setCustomerName('');
@@ -236,11 +240,17 @@ export const BillingView: React.FC<BillingViewProps> = ({
       try {
         await navigator.share({ title: `Invoice ${lastSale.id}`, text });
       } catch {
-        // Share cancelled
+        // Share cancelled or unavailable
+      }
+    } else if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        onShowToast('Invoice text copied to clipboard!', 'info');
+      } catch {
+        onShowToast('Invoice details ready. Please share via WhatsApp.', 'info');
       }
     } else {
-      navigator.clipboard.writeText(text);
-      onShowToast('Invoice text copied to clipboard!', 'info');
+      onShowToast('Invoice details ready. Please share via WhatsApp.', 'info');
     }
   };
 

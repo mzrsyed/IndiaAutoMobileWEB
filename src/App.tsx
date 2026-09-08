@@ -18,7 +18,11 @@ import {
   clearAllSalesHistory,
   saveUserRecord,
   deleteUserRecord,
-  subscribeToData
+  subscribeToData,
+  getSessionTimeoutMinutes,
+  setSessionTimeoutMinutes,
+  updateLastActivity,
+  checkSessionExpired
 } from './services/storage';
 import { generateInvoicePDF, generateLedgerPDF } from './services/pdfService';
 import {
@@ -49,6 +53,7 @@ export default function App() {
 
   const [cloudStatus, setCloudStatus] = useState('Connecting to storage...');
   const [isOnline, setIsOnline] = useState(true);
+  const [sessionTimeoutMinutes, setSessionTimeoutMinutesState] = useState<number>(() => getSessionTimeoutMinutes());
 
   // Modals & transient interactions
   const [paymentModalSale, setPaymentModalSale] = useState<SaleRecord | null>(null);
@@ -93,10 +98,61 @@ export default function App() {
     };
   }, []);
 
-  // Sync active user changes with sessionStorage
+  // User activity tracker & session timeout watchdog
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let lastActiveRecord = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      // Throttle updating storage to once every 15 seconds
+      if (now - lastActiveRecord > 15000) {
+        lastActiveRecord = now;
+        updateLastActivity();
+      }
+    };
+
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
+    activityEvents.forEach((ev) => {
+      window.addEventListener(ev, handleUserActivity, { passive: true });
+    });
+
+    // Check expiration every 10 seconds
+    const interval = setInterval(() => {
+      if (checkSessionExpired()) {
+        setCurrentUser(null);
+        setLocalActiveUser(null);
+        showToast('Login session timed out due to inactivity. Please sign in again.', 'info');
+      }
+    }, 10000);
+
+    return () => {
+      activityEvents.forEach((ev) => {
+        window.removeEventListener(ev, handleUserActivity);
+      });
+      clearInterval(interval);
+    };
+  }, [currentUser, sessionTimeoutMinutes, showToast]);
+
+  const handleUpdateSessionTimeout = (minutes: number) => {
+    setSessionTimeoutMinutes(minutes);
+    setSessionTimeoutMinutesState(minutes);
+    updateLastActivity();
+    if (minutes === 0) {
+      showToast('Session timeout set to: Never (Stay logged in).', 'info');
+    } else if (minutes >= 60) {
+      const hours = minutes / 60;
+      showToast(`Session timeout set to: ${hours} hour${hours > 1 ? 's' : ''}.`, 'info');
+    } else {
+      showToast(`Session timeout set to: ${minutes} minutes.`, 'info');
+    }
+  };
+
+  // Sync active user changes with storage
   const handleLoginSuccess = (user: SystemUser) => {
     setCurrentUser(user);
     setLocalActiveUser(user);
+    updateLastActivity();
     showToast(`Welcome back, ${user.name}!`, 'success');
   };
 
@@ -119,11 +175,11 @@ export default function App() {
     showToast('Item deleted from inventory.', 'info');
   };
 
-  // Billing actions
+  // Billing actions: Auto-adjust item stock immediately
   const handleProcessSale = async (sale: SaleRecord) => {
-    await saveSaleRecord(sale, true);
-    setSales(getLocalSales());
-    setInventory(getLocalInventory());
+    const { updatedInventory, updatedSales } = await saveSaleRecord(sale, true);
+    setSales([...updatedSales]);
+    setInventory([...updatedInventory]);
   };
 
   // Payment update modal
@@ -144,9 +200,9 @@ export default function App() {
 
   // Delete sale with stock restore
   const handleDeleteSale = async (saleId: string) => {
-    await deleteSaleRecord(saleId, true);
-    setSales(getLocalSales());
-    setInventory(getLocalInventory());
+    const { updatedInventory, updatedSales } = await deleteSaleRecord(saleId, true);
+    setSales([...updatedSales]);
+    setInventory([...updatedInventory]);
     showToast('Bill deleted and inventory stock restored.', 'info');
   };
 
@@ -194,17 +250,17 @@ export default function App() {
   };
 
   // PDF Generators
-  const handleDownloadInvoicePDF = (sale: SaleRecord) => {
+  const handleDownloadInvoicePDF = async (sale: SaleRecord) => {
     try {
-      generateInvoicePDF(sale);
-      showToast('Invoice PDF generated successfully.', 'success');
+      await generateInvoicePDF(sale);
+      showToast('Invoice PDF downloaded successfully.', 'success');
     } catch (err) {
       console.error('Invoice PDF generation failed:', err);
       showToast('Failed to generate PDF invoice.', 'error');
     }
   };
 
-  const handleDownloadLedgerPDF = (contact: string, name: string) => {
+  const handleDownloadLedgerPDF = async (contact: string, name: string) => {
     const customerOrders = sales.filter(
       (s) => s.customer && s.customer.contact && s.customer.contact.trim() === contact.trim()
     );
@@ -213,7 +269,7 @@ export default function App() {
       return;
     }
     try {
-      generateLedgerPDF(
+      await generateLedgerPDF(
         name || 'Customer',
         contact,
         customerOrders,
@@ -226,10 +282,16 @@ export default function App() {
     }
   };
 
-  // WhatsApp dispatchers
+  // WhatsApp dispatchers (anchor click prevents popup blocker in iframes)
   const handleShareSaleWhatsApp = (sale: SaleRecord) => {
     const url = formatWhatsAppUrlForSale(sale);
-    window.open(url, '_blank');
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   const handleShareLedgerWhatsApp = (contact: string, name: string) => {
@@ -241,7 +303,13 @@ export default function App() {
       return;
     }
     const url = formatWhatsAppUrlForLedger(name || 'Customer', contact, customerOrders);
-    window.open(url, '_blank');
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   // Book order for customer navigation
@@ -366,6 +434,8 @@ export default function App() {
             currentUser={currentUser}
             cloudStatusText={cloudStatus}
             isOnline={isOnline}
+            sessionTimeoutMinutes={sessionTimeoutMinutes}
+            onUpdateSessionTimeout={handleUpdateSessionTimeout}
             onLogout={handleLogout}
             onExportBackup={handleExportBackup}
             onImportBackup={handleImportBackup}
@@ -446,6 +516,8 @@ export default function App() {
             {activeTab === 'users' && isAdmin && (
               <UsersView
                 users={users}
+                sessionTimeoutMinutes={sessionTimeoutMinutes}
+                onUpdateSessionTimeout={handleUpdateSessionTimeout}
                 onAddUser={handleAddUser}
                 onUpdateUser={handleUpdateUser}
                 onDeleteUser={handleDeleteUser}

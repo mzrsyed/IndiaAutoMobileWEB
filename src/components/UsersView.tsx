@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { ShieldCheck, UserPlus, KeyRound, Trash2, UserCheck } from 'lucide-react';
+import { ShieldCheck, UserPlus, KeyRound, Trash2, UserCheck, Clock, X, Check } from 'lucide-react';
 import { SystemUser } from '../types';
 
 interface UsersViewProps {
   users: SystemUser[];
+  sessionTimeoutMinutes: number;
+  onUpdateSessionTimeout: (minutes: number) => void;
   onAddUser: (user: SystemUser) => void;
   onUpdateUser: (user: SystemUser) => void;
   onDeleteUser: (userId: string) => void;
@@ -12,6 +14,8 @@ interface UsersViewProps {
 
 export const UsersView: React.FC<UsersViewProps> = ({
   users,
+  sessionTimeoutMinutes,
+  onUpdateSessionTimeout,
   onAddUser,
   onUpdateUser,
   onDeleteUser,
@@ -20,6 +24,12 @@ export const UsersView: React.FC<UsersViewProps> = ({
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+
+  // Editing user modal state
+  const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,35 +79,42 @@ export const UsersView: React.FC<UsersViewProps> = ({
     );
   };
 
-  const handleEditUser = (user: SystemUser) => {
-    const newName = prompt('Edit Full Name:', user.name);
-    if (newName === null) return;
-    const newUsername = prompt('Edit Username:', user.username);
-    if (newUsername === null) return;
-    const newPassword = prompt('Edit Password:', user.password || '');
-    if (newPassword === null) return;
+  const handleOpenEditModal = (user: SystemUser) => {
+    setEditingUser(user);
+    setEditName(user.name);
+    setEditUsername(user.username);
+    setEditPassword(user.password || '');
+  };
 
-    if (!newName.trim() || !newUsername.trim() || !newPassword) {
-      onShowToast('Fields cannot be empty.', 'error');
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    const trimmedName = editName.trim();
+    const trimmedUsername = editUsername.trim().toLowerCase();
+
+    if (!trimmedName || !trimmedUsername || !editPassword) {
+      onShowToast('All fields are required.', 'error');
       return;
     }
 
-    const normalizedUser = newUsername.trim().toLowerCase();
     const usernameTaken = users.some(
-      (u) => u.id !== user.id && u.username.toLowerCase() === normalizedUser
+      (u) => u.id !== editingUser.id && u.username.toLowerCase() === trimmedUsername
     );
     if (usernameTaken) {
-      onShowToast('That username is already taken.', 'error');
+      onShowToast('That username is already taken by another account.', 'error');
       return;
     }
 
     onUpdateUser({
-      ...user,
-      name: newName.trim(),
-      username: normalizedUser,
-      password: newPassword
+      ...editingUser,
+      name: trimmedName,
+      username: trimmedUsername,
+      password: editPassword
     });
-    onShowToast('User profile updated successfully!', 'success');
+
+    onShowToast(`Account details for ${trimmedName} updated successfully!`, 'success');
+    setEditingUser(null);
   };
 
   return (
@@ -236,7 +253,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
                           </button>
                         )}
                         <button
-                          onClick={() => handleEditUser(u)}
+                          onClick={() => handleOpenEditModal(u)}
                           className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors font-medium text-xs flex items-center gap-1 cursor-pointer"
                         >
                           <KeyRound className="w-3.5 h-3.5" />
@@ -264,6 +281,126 @@ export const UsersView: React.FC<UsersViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Security & Login Session Timeout Configuration Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-900">
+                Login Session Inactivity Timeout
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5 max-w-lg leading-relaxed">
+                Automatically logs out the active user after a specified duration of inactivity to prevent unauthorized access when a computer or billing device is left unattended.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold text-gray-600 whitespace-nowrap">
+              Auto-Logout:
+            </label>
+            <select
+              value={sessionTimeoutMinutes}
+              onChange={(e) => onUpdateSessionTimeout(parseInt(e.target.value, 10))}
+              className="px-3.5 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm cursor-pointer"
+            >
+              <option value={15}>15 Minutes</option>
+              <option value={30}>30 Minutes (Default)</option>
+              <option value={60}>1 Hour</option>
+              <option value={120}>2 Hours</option>
+              <option value={240}>4 Hours</option>
+              <option value={480}>8 Hours</option>
+              <option value={0}>Never (Stay Logged In)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-gray-900 text-base">Edit User Profile & Credentials</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm outline-none"
+                  placeholder="e.g. John Doe"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Username (Login ID)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm outline-none font-mono"
+                  placeholder="e.g. johnd"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Account Password
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm outline-none font-mono"
+                  placeholder="Password"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

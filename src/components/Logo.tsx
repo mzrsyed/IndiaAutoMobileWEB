@@ -45,30 +45,34 @@ export const APP_LOGO_DATA_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent
 
 let cachedPngUrl: string | null = null;
 
-export async function getLogoPngDataUrl(): Promise<string> {
+export async function getLogoPngDataUrl(): Promise<string | null> {
   if (cachedPngUrl) return cachedPngUrl;
   return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 600;
-        canvas.height = 600;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, 600, 600);
-          cachedPngUrl = canvas.toDataURL('image/png');
-          resolve(cachedPngUrl);
-          return;
+    try {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 600;
+          canvas.height = 600;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, 600, 600);
+            cachedPngUrl = canvas.toDataURL('image/png');
+            resolve(cachedPngUrl);
+            return;
+          }
+        } catch (err) {
+          console.warn('Canvas rasterization failed:', err);
         }
-      } catch (err) {
-        console.warn('Canvas rasterization failed:', err);
-      }
-      resolve(APP_LOGO_DATA_URL);
-    };
-    img.onerror = () => resolve(APP_LOGO_DATA_URL);
-    img.src = APP_LOGO_DATA_URL;
+        resolve(null);
+      };
+      img.onerror = () => resolve(null);
+      img.src = APP_LOGO_DATA_URL;
+    } catch {
+      resolve(null);
+    }
   });
 }
 

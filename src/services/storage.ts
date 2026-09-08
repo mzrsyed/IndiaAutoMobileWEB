@@ -39,8 +39,59 @@ const STORAGE_KEYS = {
   INVENTORY: 'ia_inventory_cache',
   SALES: 'ia_sales_cache',
   USERS: 'ia_users_cache',
-  ACTIVE_USER: 'ia_active_user'
+  ACTIVE_USER: 'ia_active_user',
+  SESSION_TIMEOUT: 'ia_session_timeout_minutes',
+  LAST_ACTIVITY: 'ia_last_activity_timestamp'
 };
+
+// Session timeout: default 30 minutes (0 = never timeout)
+export const DEFAULT_SESSION_TIMEOUT_MINUTES = 30;
+
+export function getSessionTimeoutMinutes(): number {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SESSION_TIMEOUT);
+    if (raw === null) return DEFAULT_SESSION_TIMEOUT_MINUTES;
+    const val = parseInt(raw, 10);
+    return isNaN(val) ? DEFAULT_SESSION_TIMEOUT_MINUTES : val;
+  } catch {
+    return DEFAULT_SESSION_TIMEOUT_MINUTES;
+  }
+}
+
+export function setSessionTimeoutMinutes(minutes: number): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SESSION_TIMEOUT, minutes.toString());
+  } catch {
+    // Graceful fallback
+  }
+}
+
+export function updateLastActivity(): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.LAST_ACTIVITY, Date.now().toString());
+  } catch {
+    // Graceful fallback
+  }
+}
+
+export function getLastActivity(): number {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.LAST_ACTIVITY);
+    if (!raw) return Date.now();
+    const val = parseInt(raw, 10);
+    return isNaN(val) ? Date.now() : val;
+  } catch {
+    return Date.now();
+  }
+}
+
+export function checkSessionExpired(): boolean {
+  const timeoutMins = getSessionTimeoutMinutes();
+  if (timeoutMins <= 0) return false; // 0 means Never timeout
+  const lastActive = getLastActivity();
+  const elapsedMs = Date.now() - lastActive;
+  return elapsedMs > timeoutMins * 60 * 1000;
+}
 
 export const DEFAULT_ADMIN: SystemUser = {
   id: 'USER_ADMIN',
@@ -156,9 +207,11 @@ export function setLocalActiveUser(user: SystemUser | null): void {
     if (user) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(user));
       sessionStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(user));
+      updateLastActivity();
     } else {
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
       sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+      localStorage.removeItem(STORAGE_KEYS.LAST_ACTIVITY);
     }
   } catch {
     // Graceful storage fallback
@@ -167,6 +220,10 @@ export function setLocalActiveUser(user: SystemUser | null): void {
 
 export function getLocalActiveUser(): SystemUser | null {
   try {
+    if (checkSessionExpired()) {
+      setLocalActiveUser(null);
+      return null;
+    }
     const raw = sessionStorage.getItem(STORAGE_KEYS.ACTIVE_USER) || localStorage.getItem(STORAGE_KEYS.ACTIVE_USER);
     if (!raw) return null;
     return JSON.parse(raw);
@@ -210,7 +267,10 @@ export async function deleteInventoryItem(itemId: string): Promise<void> {
   }
 }
 
-export async function saveSaleRecord(sale: SaleRecord, updateStock = true): Promise<void> {
+export async function saveSaleRecord(
+  sale: SaleRecord,
+  updateStock = true
+): Promise<{ updatedInventory: InventoryItem[]; updatedSales: SaleRecord[] }> {
   const currentSales = getLocalSales();
   const index = currentSales.findIndex(s => s.id === sale.id);
   if (index >= 0) {
@@ -220,60 +280,89 @@ export async function saveSaleRecord(sale: SaleRecord, updateStock = true): Prom
   }
   localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(currentSales));
 
-  // Deduct stock locally
-  if (updateStock && Array.isArray(sale.items)) {
-    const inv = getLocalInventory();
+  const inv = getLocalInventory();
+  const modifiedItems: InventoryItem[] = [];
+
+  // Deduct stock locally immediately
+  if (updateStock && Array.isArray(sale.items) && sale.items.length > 0) {
     sale.items.forEach(ci => {
-      const item = inv.find(i => i.id === ci.id);
+      const qtyToDeduct = Number(ci.qty) || 0;
+      if (qtyToDeduct <= 0) return;
+
+      // Robust matching: ID, code, or name
+      const item = inv.find(i =>
+        (ci.id && i.id === ci.id) ||
+        (ci.code && ci.code !== '-' && i.code && i.code.trim().toLowerCase() === ci.code.trim().toLowerCase()) ||
+        (ci.name && i.name && i.name.trim().toLowerCase() === ci.name.trim().toLowerCase())
+      );
+
       if (item) {
-        item.qty = Math.max(0, (Number(item.qty) || 0) - Number(ci.qty));
+        item.qty = Math.max(0, (Number(item.qty) || 0) - qtyToDeduct);
+        if (!modifiedItems.some(m => m.id === item.id)) {
+          modifiedItems.push(item);
+        }
       }
     });
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
   }
 
-  // Cloud sync
+  // Cloud sync with atomic writeBatch
   if (db) {
     try {
-      await setDoc(doc(db, 'sales', sale.id), sale);
-      if (updateStock && Array.isArray(sale.items)) {
-        for (const ci of sale.items) {
-          const item = getLocalInventory().find(i => i.id === ci.id);
-          if (item) {
-            await setDoc(doc(db, 'inventory', item.id), item);
-          }
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'sales', sale.id), sale);
+      if (updateStock && modifiedItems.length > 0) {
+        for (const item of modifiedItems) {
+          batch.set(doc(db, 'inventory', item.id), item);
         }
       }
+      await batch.commit();
     } catch (err) {
-      console.warn('Firestore sale sync warning:', err);
+      console.warn('Firestore sale batch sync warning:', err);
     }
   }
+
+  return { updatedInventory: inv, updatedSales: currentSales };
 }
 
-export async function deleteSaleRecord(saleId: string, restoreStock = true): Promise<void> {
+export async function deleteSaleRecord(
+  saleId: string,
+  restoreStock = true
+): Promise<{ updatedInventory: InventoryItem[]; updatedSales: SaleRecord[] }> {
   const currentSales = getLocalSales();
   const sale = currentSales.find(s => s.id === saleId);
+  const inv = getLocalInventory();
+  const modifiedItems: InventoryItem[] = [];
 
   if (sale && restoreStock && Array.isArray(sale.items)) {
-    const inv = getLocalInventory();
     sale.items.forEach(ci => {
-      const item = inv.find(i => i.id === ci.id);
+      const qtyToRestore = Number(ci.qty) || 0;
+      if (qtyToRestore <= 0) return;
+
+      const item = inv.find(i =>
+        (ci.id && i.id === ci.id) ||
+        (ci.code && ci.code !== '-' && i.code && i.code.trim().toLowerCase() === ci.code.trim().toLowerCase()) ||
+        (ci.name && i.name && i.name.trim().toLowerCase() === ci.name.trim().toLowerCase())
+      );
+
       if (item) {
-        item.qty = (Number(item.qty) || 0) + (Number(ci.qty) || 0);
+        item.qty = (Number(item.qty) || 0) + qtyToRestore;
+        if (!modifiedItems.some(m => m.id === item.id)) {
+          modifiedItems.push(item);
+        }
       }
     });
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
 
-    if (db) {
+    if (db && modifiedItems.length > 0) {
       try {
-        for (const ci of sale.items) {
-          const item = inv.find(i => i.id === ci.id);
-          if (item) {
-            await setDoc(doc(db, 'inventory', item.id), item);
-          }
+        const batch = writeBatch(db);
+        for (const item of modifiedItems) {
+          batch.set(doc(db, 'inventory', item.id), item);
         }
+        await batch.commit();
       } catch (err) {
-        console.warn('Firestore stock restore warning:', err);
+        console.warn('Firestore stock restore batch warning:', err);
       }
     }
   }
@@ -288,6 +377,8 @@ export async function deleteSaleRecord(saleId: string, restoreStock = true): Pro
       console.warn('Firestore sale delete warning:', err);
     }
   }
+
+  return { updatedInventory: inv, updatedSales: filtered };
 }
 
 export async function clearAllSalesHistory(): Promise<void> {
