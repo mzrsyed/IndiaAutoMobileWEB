@@ -59,13 +59,13 @@ export const BillingView: React.FC<BillingViewProps> = ({
   }, [initialCustomer]);
 
   // Selected item object
-  const activeItem = inventory.find((i) => i.id === selectedItemId);
+  const activeItem = inventory.find((i) => String(i.id).trim() === String(selectedItemId).trim());
   const alreadyInCart = activeItem
     ? cart
-        .filter((ci) => ci.id === activeItem.id)
+        .filter((ci) => String(ci.id).trim() === String(activeItem.id).trim())
         .reduce((sum, ci) => sum + ci.qty, 0)
     : 0;
-  const availableStock = activeItem ? Math.max(0, activeItem.qty - alreadyInCart) : 0;
+  const availableStock = activeItem ? Math.max(0, (Number(activeItem.qty) || 0) - alreadyInCart) : 0;
 
   // Search filtered items
   const searchMatches = inventory.filter((item) => {
@@ -78,7 +78,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
   });
 
   const handleSelectItem = (item: InventoryItem) => {
-    setSelectedItemId(item.id);
+    setSelectedItemId(String(item.id).trim());
     setSearchItemQuery(item.name);
     setShowSearchResults(false);
     setItemQty(1);
@@ -99,7 +99,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
     // Check if item already exists in cart with same discount
     const existingIndex = cart.findIndex(
-      (c) => c.id === activeItem.id && c.discountPct === effectiveDisc
+      (c) => String(c.id).trim() === String(activeItem.id).trim() && c.discountPct === effectiveDisc
     );
 
     if (existingIndex >= 0) {
@@ -115,7 +115,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
       setCart([
         ...cart,
         {
-          id: activeItem.id,
+          id: String(activeItem.id).trim(),
           code: activeItem.code || '-',
           name: activeItem.name,
           basePrice: basePrice,
@@ -340,6 +340,14 @@ export const BillingView: React.FC<BillingViewProps> = ({
                         setShowSearchResults(true);
                       }}
                       onFocus={() => setShowSearchResults(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (searchMatches.length > 0) {
+                            handleSelectItem(searchMatches[0]);
+                          }
+                        }
+                      }}
                       placeholder="Type item name or code (e.g. Brake Pad, IA-001)..."
                       className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm outline-none"
                     />

@@ -177,7 +177,7 @@ export default function App() {
 
   // Billing actions: Auto-adjust item stock immediately
   const handleProcessSale = async (sale: SaleRecord) => {
-    const { updatedInventory, updatedSales } = await saveSaleRecord(sale, true);
+    const { updatedInventory, updatedSales } = await saveSaleRecord(sale, true, inventory);
     setSales([...updatedSales]);
     setInventory([...updatedInventory]);
   };
@@ -193,14 +193,14 @@ export default function App() {
       balance: Math.max(0, (Number(sale.total) || 0) - newPaidAmount)
     };
 
-    await saveSaleRecord(updatedSale, false);
+    await saveSaleRecord(updatedSale, false, inventory);
     setSales(getLocalSales());
     showToast('Payment details updated successfully.', 'success');
   };
 
   // Delete sale with stock restore
   const handleDeleteSale = async (saleId: string) => {
-    const { updatedInventory, updatedSales } = await deleteSaleRecord(saleId, true);
+    const { updatedInventory, updatedSales } = await deleteSaleRecord(saleId, true, inventory);
     setSales([...updatedSales]);
     setInventory([...updatedInventory]);
     showToast('Bill deleted and inventory stock restored.', 'info');

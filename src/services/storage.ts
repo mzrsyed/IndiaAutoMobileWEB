@@ -155,19 +155,89 @@ const SEED_INVENTORY: InventoryItem[] = [
   }
 ];
 
-// Synchronous local reading
+// In-memory active cache to prevent stale reads
+let cachedInventory: InventoryItem[] | null = null;
+
+// Synchronous local reading with cache priority
 export function getLocalInventory(): InventoryItem[] {
+  if (cachedInventory && cachedInventory.length > 0) {
+    return cachedInventory;
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.INVENTORY);
     if (!raw) {
       localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(SEED_INVENTORY));
+      cachedInventory = SEED_INVENTORY;
       return SEED_INVENTORY;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_INVENTORY;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      cachedInventory = parsed;
+      return parsed;
+    }
+    cachedInventory = SEED_INVENTORY;
+    return SEED_INVENTORY;
   } catch {
+    cachedInventory = SEED_INVENTORY;
     return SEED_INVENTORY;
   }
+}
+
+/**
+ * Strict hierarchical matching helper:
+ * 1. Exact ID match (highest priority, preventing brand-name collisions)
+ * 2. Exact match on BOTH clean code AND clean name
+ * 3. Exact match on clean name
+ * 4. Normalized name match (whitespace collapsed)
+ * Never matches on code alone, because code frequently holds shared brand/manufacturer tags.
+ */
+export function findMatchingInventoryItem(
+  inventory: InventoryItem[],
+  target: { id?: string; code?: string; name?: string }
+): InventoryItem | undefined {
+  if (!inventory || !Array.isArray(inventory) || inventory.length === 0) return undefined;
+
+  // 1. Highest priority: exact ID
+  if (target.id) {
+    const targetIdStr = String(target.id).trim();
+    if (targetIdStr) {
+      const matchById = inventory.find(i => String(i.id).trim() === targetIdStr);
+      if (matchById) return matchById;
+    }
+  }
+
+  // 2. Exact match on BOTH code AND name
+  const targetCode = target.code && target.code !== '-' ? target.code.trim().toLowerCase() : '';
+  const targetName = target.name ? target.name.trim().toLowerCase() : '';
+
+  if (targetCode && targetName) {
+    const matchByBoth = inventory.find(i =>
+      i.code &&
+      i.code.trim().toLowerCase() === targetCode &&
+      i.name &&
+      i.name.trim().toLowerCase() === targetName
+    );
+    if (matchByBoth) return matchByBoth;
+  }
+
+  // 3. Exact match on name
+  if (targetName) {
+    const matchByName = inventory.find(i =>
+      i.name && i.name.trim().toLowerCase() === targetName
+    );
+    if (matchByName) return matchByName;
+  }
+
+  // 4. Normalized name match
+  if (targetName) {
+    const normTargetName = targetName.replace(/\s+/g, ' ');
+    const matchByNorm = inventory.find(i =>
+      i.name && i.name.trim().toLowerCase().replace(/\s+/g, ' ') === normTargetName
+    );
+    if (matchByNorm) return matchByNorm;
+  }
+
+  return undefined;
 }
 
 export function getLocalSales(): SaleRecord[] {
@@ -234,20 +304,38 @@ export function getLocalActiveUser(): SystemUser | null {
 
 // Storage managers with Cloud Sync + Fallback
 export async function saveInventoryItem(item: InventoryItem): Promise<void> {
-  // Update local cache first
-  const current = getLocalInventory();
-  const index = current.findIndex(i => i.id === item.id);
+  const sanitizedItem: InventoryItem = {
+    ...item,
+    id: String(item.id).trim(),
+    code: item.code ? item.code.trim() : '',
+    name: item.name ? item.name.trim() : '',
+    qty: typeof item.qty === 'number' ? item.qty : Number(item.qty) || 0,
+    mrp: typeof item.mrp === 'number' ? item.mrp : Number(item.mrp) || 0,
+    sp: typeof item.sp === 'number' ? item.sp : Number(item.sp) || 0,
+    discount: typeof item.discount === 'number' ? item.discount : Number(item.discount) || 0,
+    dateAdded: item.dateAdded || new Date().toISOString()
+  };
+
+  // Update in-memory cache first
+  const current = getLocalInventory().map(i => ({ ...i }));
+  const index = current.findIndex(i => String(i.id).trim() === sanitizedItem.id);
   if (index >= 0) {
-    current[index] = item;
+    current[index] = sanitizedItem;
   } else {
-    current.unshift(item);
+    current.unshift(sanitizedItem);
   }
-  localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(current));
+  cachedInventory = current;
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(current));
+  } catch (e) {
+    console.warn('LocalStorage save error:', e);
+  }
 
   // Sync to Firestore if available
   if (db) {
     try {
-      await setDoc(doc(db, 'inventory', item.id), item);
+      await setDoc(doc(db, 'inventory', sanitizedItem.id), sanitizedItem);
     } catch (err) {
       console.warn('Firestore write warning (saved locally):', err);
     }
@@ -255,12 +343,17 @@ export async function saveInventoryItem(item: InventoryItem): Promise<void> {
 }
 
 export async function deleteInventoryItem(itemId: string): Promise<void> {
-  const current = getLocalInventory().filter(i => i.id !== itemId);
-  localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(current));
+  const current = getLocalInventory().filter(i => String(i.id).trim() !== String(itemId).trim());
+  cachedInventory = current;
+  try {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(current));
+  } catch (e) {
+    console.warn('LocalStorage delete error:', e);
+  }
 
   if (db) {
     try {
-      await deleteDoc(doc(db, 'inventory', itemId));
+      await deleteDoc(doc(db, 'inventory', String(itemId).trim()));
     } catch (err) {
       console.warn('Firestore delete warning (removed locally):', err);
     }
@@ -269,8 +362,10 @@ export async function deleteInventoryItem(itemId: string): Promise<void> {
 
 export async function saveSaleRecord(
   sale: SaleRecord,
-  updateStock = true
+  updateStock = true,
+  baseInventory?: InventoryItem[]
 ): Promise<{ updatedInventory: InventoryItem[]; updatedSales: SaleRecord[] }> {
+  // 1. Update sales record list
   const currentSales = getLocalSales();
   const index = currentSales.findIndex(s => s.id === sale.id);
   if (index >= 0) {
@@ -278,47 +373,79 @@ export async function saveSaleRecord(
   } else {
     currentSales.unshift(sale);
   }
-  localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(currentSales));
+  try {
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(currentSales));
+  } catch (e) {
+    console.warn('LocalStorage sales save error:', e);
+  }
 
-  const inv = getLocalInventory();
+  // 2. Determine base inventory to apply stock adjustments
+  const invSource = (baseInventory && baseInventory.length > 0)
+    ? baseInventory
+    : (cachedInventory && cachedInventory.length > 0)
+      ? cachedInventory
+      : getLocalInventory();
+
+  const inv: InventoryItem[] = invSource.map(i => ({ ...i }));
   const modifiedItems: InventoryItem[] = [];
 
-  // Deduct stock locally immediately
+  // 3. Deduct stock accurately using strict hierarchical matching
   if (updateStock && Array.isArray(sale.items) && sale.items.length > 0) {
     sale.items.forEach(ci => {
       const qtyToDeduct = Number(ci.qty) || 0;
       if (qtyToDeduct <= 0) return;
 
-      // Robust matching: ID, code, or name
-      const item = inv.find(i =>
-        (ci.id && i.id === ci.id) ||
-        (ci.code && ci.code !== '-' && i.code && i.code.trim().toLowerCase() === ci.code.trim().toLowerCase()) ||
-        (ci.name && i.name && i.name.trim().toLowerCase() === ci.name.trim().toLowerCase())
-      );
-
+      const item = findMatchingInventoryItem(inv, ci);
       if (item) {
-        item.qty = Math.max(0, (Number(item.qty) || 0) - qtyToDeduct);
-        if (!modifiedItems.some(m => m.id === item.id)) {
+        const prevQty = Number(item.qty) || 0;
+        item.qty = Math.max(0, prevQty - qtyToDeduct);
+        if (!modifiedItems.some(m => String(m.id).trim() === String(item.id).trim())) {
           modifiedItems.push(item);
         }
+      } else {
+        console.warn(`[Stock Adjustment] Item not found for deduction: "${ci.name}" (id: ${ci.id}, code: ${ci.code})`);
       }
     });
-    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+
+    cachedInventory = inv;
+    try {
+      localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+    } catch (e) {
+      console.warn('LocalStorage inventory update error:', e);
+    }
   }
 
-  // Cloud sync with atomic writeBatch
+  // 4. Cloud sync: write sale document AND adjust inventory items in Firestore
   if (db) {
     try {
       const batch = writeBatch(db);
       batch.set(doc(db, 'sales', sale.id), sale);
       if (updateStock && modifiedItems.length > 0) {
         for (const item of modifiedItems) {
-          batch.set(doc(db, 'inventory', item.id), item);
+          if (item && item.id) {
+            batch.set(doc(db, 'inventory', String(item.id).trim()), item);
+          }
         }
       }
       await batch.commit();
     } catch (err) {
-      console.warn('Firestore sale batch sync warning:', err);
+      console.warn('Firestore sale batch sync warning, attempting individual document writes:', err);
+      try {
+        await setDoc(doc(db, 'sales', sale.id), sale);
+      } catch (e) {
+        console.warn('Individual sale write warning:', e);
+      }
+      if (updateStock && modifiedItems.length > 0) {
+        for (const item of modifiedItems) {
+          if (item && item.id) {
+            try {
+              await setDoc(doc(db, 'inventory', String(item.id).trim()), item);
+            } catch (e) {
+              console.warn(`Individual inventory stock write warning for ${item.id}:`, e);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -327,11 +454,19 @@ export async function saveSaleRecord(
 
 export async function deleteSaleRecord(
   saleId: string,
-  restoreStock = true
+  restoreStock = true,
+  baseInventory?: InventoryItem[]
 ): Promise<{ updatedInventory: InventoryItem[]; updatedSales: SaleRecord[] }> {
   const currentSales = getLocalSales();
   const sale = currentSales.find(s => s.id === saleId);
-  const inv = getLocalInventory();
+
+  const invSource = (baseInventory && baseInventory.length > 0)
+    ? baseInventory
+    : (cachedInventory && cachedInventory.length > 0)
+      ? cachedInventory
+      : getLocalInventory();
+
+  const inv: InventoryItem[] = invSource.map(i => ({ ...i }));
   const modifiedItems: InventoryItem[] = [];
 
   if (sale && restoreStock && Array.isArray(sale.items)) {
@@ -339,36 +474,53 @@ export async function deleteSaleRecord(
       const qtyToRestore = Number(ci.qty) || 0;
       if (qtyToRestore <= 0) return;
 
-      const item = inv.find(i =>
-        (ci.id && i.id === ci.id) ||
-        (ci.code && ci.code !== '-' && i.code && i.code.trim().toLowerCase() === ci.code.trim().toLowerCase()) ||
-        (ci.name && i.name && i.name.trim().toLowerCase() === ci.name.trim().toLowerCase())
-      );
-
+      const item = findMatchingInventoryItem(inv, ci);
       if (item) {
-        item.qty = (Number(item.qty) || 0) + qtyToRestore;
-        if (!modifiedItems.some(m => m.id === item.id)) {
+        const prevQty = Number(item.qty) || 0;
+        item.qty = prevQty + qtyToRestore;
+        if (!modifiedItems.some(m => String(m.id).trim() === String(item.id).trim())) {
           modifiedItems.push(item);
         }
       }
     });
-    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+
+    cachedInventory = inv;
+    try {
+      localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+    } catch (e) {
+      console.warn('LocalStorage inventory restore error:', e);
+    }
 
     if (db && modifiedItems.length > 0) {
       try {
         const batch = writeBatch(db);
         for (const item of modifiedItems) {
-          batch.set(doc(db, 'inventory', item.id), item);
+          if (item && item.id) {
+            batch.set(doc(db, 'inventory', String(item.id).trim()), item);
+          }
         }
         await batch.commit();
       } catch (err) {
         console.warn('Firestore stock restore batch warning:', err);
+        for (const item of modifiedItems) {
+          if (item && item.id) {
+            try {
+              await setDoc(doc(db, 'inventory', String(item.id).trim()), item);
+            } catch (e) {
+              console.warn(`Individual inventory stock restore warning for ${item.id}:`, e);
+            }
+          }
+        }
       }
     }
   }
 
   const filtered = currentSales.filter(s => s.id !== saleId);
-  localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(filtered));
+  try {
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('LocalStorage sales delete error:', e);
+  }
 
   if (db) {
     try {
@@ -457,8 +609,25 @@ export function subscribeToData(
         collection(db, 'inventory'),
         (snapshot) => {
           if (!snapshot.empty) {
-            const items = snapshot.docs.map(d => d.data() as InventoryItem);
-            localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(items));
+            const items: InventoryItem[] = snapshot.docs.map(d => {
+              const data = d.data();
+              return {
+                id: String(data.id || d.id).trim(),
+                code: data.code ? String(data.code).trim() : '',
+                name: data.name ? String(data.name).trim() : '',
+                qty: typeof data.qty === 'number' ? data.qty : Number(data.qty) || 0,
+                mrp: typeof data.mrp === 'number' ? data.mrp : Number(data.mrp) || 0,
+                sp: typeof data.sp === 'number' ? data.sp : Number(data.sp) || 0,
+                discount: typeof data.discount === 'number' ? data.discount : Number(data.discount) || 0,
+                dateAdded: data.dateAdded || new Date().toISOString()
+              };
+            });
+            cachedInventory = items;
+            try {
+              localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(items));
+            } catch (e) {
+              console.warn('LocalStorage inventory cache warning:', e);
+            }
             onInventoryUpdate(items);
           } else {
             // Seed cloud if empty
