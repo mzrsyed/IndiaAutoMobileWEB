@@ -12,6 +12,7 @@ import {
 import { InventoryItem, CartItem, SaleRecord, SystemUser } from '../types';
 import { BrandLogo } from './Logo';
 import { formatWhatsAppUrlForSale } from '../services/whatsappService';
+import { getInvoicePDFFile, sharePDFFile } from '../services/pdfService';
 
 interface BillingViewProps {
   inventory: InventoryItem[];
@@ -224,6 +225,50 @@ export const BillingView: React.FC<BillingViewProps> = ({
     setPaymentMode('Cash');
     setCustomerName('');
     setCustomerContact('');
+  };
+
+  const handleShareWhatsAppPDF = async (sale: SaleRecord) => {
+    try {
+      onShowToast('Preparing PDF Invoice for WhatsApp...', 'info');
+      const pdfFile = await getInvoicePDFFile(sale);
+
+      const itemsSummary = (sale.items || []).map((i) => `${i.name} x${i.qty}`).join(', ');
+      const shareTitle = `Invoice ${sale.id} - India Automobiles`;
+      const shareText = `Official Invoice #${sale.id} from India Automobiles. Customer: ${sale.customer.name}. Items: ${itemsSummary}. Total: Rs. ${sale.total.toFixed(2)}, Paid: Rs. ${sale.paid.toFixed(2)}, Due: Rs. ${sale.balance.toFixed(2)}. Proprietor: Khaja Mungle (+91 8055650977).`;
+
+      const result = await sharePDFFile(pdfFile, shareTitle, shareText);
+
+      // If Web Share was not handled natively (e.g. desktop), open WhatsApp link so user can attach the downloaded PDF
+      if (!result.sharedDirectly) {
+        const waUrl = formatWhatsAppUrlForSale(sale);
+        if (waUrl && waUrl !== '#') {
+          const link = document.createElement('a');
+          link.href = waUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }
+        onShowToast(`PDF file downloaded (${pdfFile.name}) & WhatsApp opened to attach!`, 'success');
+      } else {
+        onShowToast('PDF Invoice shared via WhatsApp!', 'success');
+      }
+    } catch (err) {
+      console.error('Error sharing PDF on WhatsApp:', err);
+      // Fallback
+      const waUrl = formatWhatsAppUrlForSale(sale);
+      if (waUrl && waUrl !== '#') {
+        const link = document.createElement('a');
+        link.href = waUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      onShowToast('WhatsApp opened with invoice details.', 'info');
+    }
   };
 
   const handleShareDetails = async () => {
@@ -482,32 +527,32 @@ export const BillingView: React.FC<BillingViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="overflow-x-auto table-container">
+                    <div className="overflow-x-auto max-h-80 overflow-y-auto table-container">
                       <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50/95 backdrop-blur-xs sticky top-0 z-10 shadow-2xs">
                           <tr>
-                            <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-3 py-2.5 text-left text-xs font-semibold text-gray-600">
                               Item Code
                             </th>
-                            <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-4 py-2.5 text-left text-xs font-semibold text-gray-600">
                               Item Name
                             </th>
-                            <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-3 py-2.5 text-center text-xs font-semibold text-gray-600">
                               Qty
                             </th>
-                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-3 py-2.5 text-right text-xs font-semibold text-gray-600">
                               Base Price
                             </th>
-                            <th className="px-4 py-2.5 text-center text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-4 py-2.5 text-center text-xs font-semibold text-gray-600">
                               Item Disc (%)
                             </th>
-                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-3 py-2.5 text-right text-xs font-semibold text-gray-600">
                               Unit Price
                             </th>
-                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-3 py-2.5 text-right text-xs font-semibold text-gray-600">
                               Total
                             </th>
-                            <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-600">
+                            <th className="sticky top-0 bg-gray-50 z-10 px-3 py-2.5 text-center text-xs font-semibold text-gray-600">
                               Action
                             </th>
                           </tr>
@@ -736,15 +781,14 @@ export const BillingView: React.FC<BillingViewProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <a
-                      href={formatWhatsAppUrlForSale(lastSale)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+                    <button
+                      type="button"
+                      onClick={() => handleShareWhatsAppPDF(lastSale)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
                     >
                       <Send className="w-4 h-4" />
-                      <span>Send Bill on WhatsApp</span>
-                    </a>
+                      <span>WhatsApp PDF Invoice</span>
+                    </button>
 
                     <button
                       type="button"

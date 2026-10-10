@@ -191,23 +191,23 @@ export const UsersView: React.FC<UsersViewProps> = ({
         </div>
 
         {/* Users Table */}
-        <div className="overflow-x-auto table-container">
+        <div className="overflow-x-auto max-h-[68vh] overflow-y-auto table-container">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/95 backdrop-blur-xs sticky top-0 z-10 shadow-2xs">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   User ID / Name
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Username
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Created Date
                 </th>
-                <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Role
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>

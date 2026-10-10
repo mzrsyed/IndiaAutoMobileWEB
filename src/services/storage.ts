@@ -452,6 +452,170 @@ export async function saveSaleRecord(
   return { updatedInventory: inv, updatedSales: currentSales };
 }
 
+/**
+ * Adjust money/payment against a customer's total due balance,
+ * updating individual order bills in chronological order (oldest pending bill first).
+ * Returns the updated sales list and the actual amount applied.
+ */
+export async function adjustCustomerBalance(
+  contact: string,
+  amount: number,
+  action: 'add' | 'reduce' = 'add',
+  notes?: string
+): Promise<{
+  updatedSales: SaleRecord[];
+  adjustedAmount: number;
+  updatedCount: number;
+  excessAmount: number;
+  action: 'add' | 'reduce';
+}> {
+  const currentSales = getLocalSales();
+  const cleanContact = (contact || '').trim().toLowerCase();
+
+  // Find all sales belonging to this customer
+  const customerSalesIndices: number[] = [];
+  currentSales.forEach((s, idx) => {
+    const sContact = (s.customer?.contact || '').trim().toLowerCase();
+    if (sContact === cleanContact) {
+      customerSalesIndices.push(idx);
+    }
+  });
+
+  const parsedAmount = Math.max(0, Number(amount) || 0);
+
+  if (customerSalesIndices.length === 0 || parsedAmount <= 0) {
+    return {
+      updatedSales: currentSales,
+      adjustedAmount: 0,
+      updatedCount: 0,
+      excessAmount: parsedAmount,
+      action
+    };
+  }
+
+  let remainingMoney = Number(parsedAmount.toFixed(2));
+  const modifiedSales: SaleRecord[] = [];
+
+  if (action === 'add') {
+    // Sort customer sales by timestamp ascending (oldest pending bills first)
+    const pendingIndices = customerSalesIndices.filter((idx) => {
+      const s = currentSales[idx];
+      const total = Number(s.total) || 0;
+      const paid = Number(s.paid) || 0;
+      const effBal = Math.max(0, total - paid);
+      return effBal > 0.001;
+    });
+
+    pendingIndices.sort((a, b) => {
+      const timeA = new Date(currentSales[a].timestamp).getTime();
+      const timeB = new Date(currentSales[b].timestamp).getTime();
+      return timeA - timeB;
+    });
+
+    for (const idx of pendingIndices) {
+      if (remainingMoney <= 0.001) break;
+
+      const sale = currentSales[idx];
+      const total = Number(sale.total) || 0;
+      const currentPaid = Number(sale.paid) || 0;
+      const currentBal = Math.max(0, Number((total - currentPaid).toFixed(2)));
+
+      if (currentBal <= 0.001) continue;
+
+      const paymentForThisBill = Number(Math.min(remainingMoney, currentBal).toFixed(2));
+      const newPaid = Number((currentPaid + paymentForThisBill).toFixed(2));
+      const newBalance = Math.max(0, Number((total - newPaid).toFixed(2)));
+
+      const updatedSale: SaleRecord = {
+        ...sale,
+        paid: newPaid,
+        balance: newBalance,
+        paymentMode: sale.paymentMode || 'Cash'
+      };
+
+      currentSales[idx] = updatedSale;
+      modifiedSales.push(updatedSale);
+      remainingMoney = Math.max(0, Number((remainingMoney - paymentForThisBill).toFixed(2)));
+    }
+  } else {
+    // action === 'reduce': reduce paid amounts starting with newest paid bills first
+    const paidIndices = customerSalesIndices.filter((idx) => {
+      const s = currentSales[idx];
+      const paid = Number(s.paid) || 0;
+      return paid > 0.001;
+    });
+
+    paidIndices.sort((a, b) => {
+      const timeA = new Date(currentSales[a].timestamp).getTime();
+      const timeB = new Date(currentSales[b].timestamp).getTime();
+      return timeB - timeA; // newest first
+    });
+
+    for (const idx of paidIndices) {
+      if (remainingMoney <= 0.001) break;
+
+      const sale = currentSales[idx];
+      const total = Number(sale.total) || 0;
+      const currentPaid = Number(sale.paid) || 0;
+
+      if (currentPaid <= 0.001) continue;
+
+      const deductionForThisBill = Number(Math.min(remainingMoney, currentPaid).toFixed(2));
+      const newPaid = Math.max(0, Number((currentPaid - deductionForThisBill).toFixed(2)));
+      const newBalance = Math.max(0, Number((total - newPaid).toFixed(2)));
+
+      const updatedSale: SaleRecord = {
+        ...sale,
+        paid: newPaid,
+        balance: newBalance,
+        paymentMode: sale.paymentMode || 'Cash'
+      };
+
+      currentSales[idx] = updatedSale;
+      modifiedSales.push(updatedSale);
+      remainingMoney = Math.max(0, Number((remainingMoney - deductionForThisBill).toFixed(2)));
+    }
+  }
+
+  const adjustedAmount = Number((parsedAmount - remainingMoney).toFixed(2));
+  const excessAmount = remainingMoney;
+
+  // Save to LocalStorage
+  try {
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(currentSales));
+  } catch (e) {
+    console.warn('LocalStorage sales update error during customer balance adjustment:', e);
+  }
+
+  // Sync to Firestore
+  if (db && modifiedSales.length > 0) {
+    try {
+      const batch = writeBatch(db);
+      for (const s of modifiedSales) {
+        batch.set(doc(db, 'sales', s.id), s);
+      }
+      await batch.commit();
+    } catch (err) {
+      console.warn('Firestore customer balance adjustment batch failed, writing individually:', err);
+      for (const s of modifiedSales) {
+        try {
+          await setDoc(doc(db, 'sales', s.id), s);
+        } catch (e) {
+          console.warn(`Firestore write failure for sale ${s.id}:`, e);
+        }
+      }
+    }
+  }
+
+  return {
+    updatedSales: currentSales,
+    adjustedAmount,
+    updatedCount: modifiedSales.length,
+    excessAmount,
+    action
+  };
+}
+
 export async function deleteSaleRecord(
   saleId: string,
   restoreStock = true,
@@ -534,10 +698,10 @@ export async function deleteSaleRecord(
 }
 
 export async function clearAllSalesHistory(): Promise<void> {
+  const current = getLocalSales();
   localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify([]));
-  if (db) {
+  if (db && current.length > 0) {
     try {
-      const current = getLocalSales();
       const batch = writeBatch(db);
       current.slice(0, 400).forEach(s => {
         if (db) batch.delete(doc(db, 'sales', s.id));

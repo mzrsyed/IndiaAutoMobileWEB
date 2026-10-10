@@ -17,6 +17,7 @@ interface HistoryViewProps {
   onOpenPaymentModal: (sale: SaleRecord) => void;
   onDownloadPDF: (sale: SaleRecord) => void;
   onShareWhatsApp: (sale: SaleRecord) => void;
+  onSendReminderWhatsApp?: (sale: SaleRecord) => void;
   onDeleteSale: (saleId: string) => void;
   onClearHistory: () => void;
   onExportCSV: () => void;
@@ -28,6 +29,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   onOpenPaymentModal,
   onDownloadPDF,
   onShareWhatsApp,
+  onSendReminderWhatsApp,
   onDeleteSale,
   onClearHistory,
   onExportCSV
@@ -54,8 +56,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Header & Controls */}
-        <div className="px-6 py-5 border-b border-gray-100 bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Header & Controls - Sticky */}
+        <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/95 backdrop-blur-xs sticky top-0 z-20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xs">
           <div>
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <ReceiptText className="w-5 h-5 text-blue-600" />
@@ -105,9 +107,9 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           </div>
         </div>
 
-        {/* Selected Sale Action Toolbar */}
+        {/* Selected Sale Action Toolbar - Sticky */}
         {selectedSale && (
-          <div className="bg-indigo-50 px-6 py-3.5 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-3 transition-all">
+          <div className="bg-indigo-50/95 backdrop-blur-xs px-6 py-3.5 border-b border-indigo-100 sticky top-[73px] z-20 flex flex-wrap items-center justify-between gap-3 transition-all shadow-xs">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
               <span className="text-xs font-bold text-gray-800">
@@ -136,10 +138,11 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
               <button
                 onClick={() => onShareWhatsApp(selectedSale)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Share PDF Invoice directly to WhatsApp"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>WhatsApp</span>
+                <span>WhatsApp PDF Invoice</span>
               </button>
 
               <button
@@ -162,30 +165,30 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           </div>
         )}
 
-        {/* Table */}
-        <div className="overflow-x-auto table-container">
+        {/* Table with Sticky Headers */}
+        <div className="overflow-x-auto max-h-[68vh] overflow-y-auto table-container">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/95 backdrop-blur-xs sticky top-0 z-10 shadow-2xs">
               <tr>
-                <th scope="col" className="w-12 px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 w-12 px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">
                   Select
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Date & Time
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Customer
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Items & Codes
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Total (₹)
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Paid (₹)
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Bal (₹)
                 </th>
               </tr>

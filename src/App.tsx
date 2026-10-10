@@ -18,16 +18,25 @@ import {
   clearAllSalesHistory,
   saveUserRecord,
   deleteUserRecord,
+  adjustCustomerBalance,
   subscribeToData,
   getSessionTimeoutMinutes,
   setSessionTimeoutMinutes,
   updateLastActivity,
   checkSessionExpired
 } from './services/storage';
-import { generateInvoicePDF, generateLedgerPDF } from './services/pdfService';
+import {
+  generateInvoicePDF,
+  generateLedgerPDF,
+  getInvoicePDFFile,
+  getDueReminderPDFFile,
+  sharePDFFile
+} from './services/pdfService';
 import {
   formatWhatsAppUrlForSale,
-  formatWhatsAppUrlForLedger
+  formatWhatsAppUrlForLedger,
+  formatWhatsAppUrlForTotalDueReminder,
+  formatWhatsAppUrlForBillDueReminder
 } from './services/whatsappService';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
@@ -55,9 +64,12 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(true);
   const [sessionTimeoutMinutes, setSessionTimeoutMinutesState] = useState<number>(() => getSessionTimeoutMinutes());
 
-  // Modals & transient interactions
   const [paymentModalSale, setPaymentModalSale] = useState<SaleRecord | null>(null);
   const [ledgerModalCustomer, setLedgerModalCustomer] = useState<{
+    contact: string;
+    name: string;
+  } | null>(null);
+  const [returnToLedgerCustomer, setReturnToLedgerCustomer] = useState<{
     contact: string;
     name: string;
   } | null>(null);
@@ -198,6 +210,45 @@ export default function App() {
     showToast('Payment details updated successfully.', 'success');
   };
 
+  // Adjust customer total due balance across all remaining pending bills (add or reduce)
+  const handleAdjustCustomerBalance = async (
+    contact: string,
+    amount: number,
+    action: 'add' | 'reduce' = 'add'
+  ) => {
+    try {
+      const { updatedSales, adjustedAmount, updatedCount, excessAmount } = await adjustCustomerBalance(
+        contact,
+        amount,
+        action
+      );
+      setSales([...updatedSales]);
+      if (adjustedAmount > 0) {
+        if (action === 'add') {
+          const excessNote = excessAmount > 0.001 ? ` Change/Excess to return: ₹${excessAmount.toFixed(2)}.` : '';
+          showToast(
+            `Added ₹${adjustedAmount.toFixed(2)} across ${updatedCount} pending bill(s).${excessNote}`,
+            'success'
+          );
+        } else {
+          showToast(
+            `Reduced ₹${adjustedAmount.toFixed(2)} from ${updatedCount} bill(s). Customer pending due reopened.`,
+            'info'
+          );
+        }
+      } else {
+        if (action === 'add') {
+          showToast('No outstanding balance to adjust for this customer.', 'info');
+        } else {
+          showToast('No paid bills found to reduce for this customer.', 'info');
+        }
+      }
+    } catch (err) {
+      console.error('Customer payment adjustment failed:', err);
+      showToast('Failed to adjust customer balance.', 'error');
+    }
+  };
+
   // Delete sale with stock restore
   const handleDeleteSale = async (saleId: string) => {
     const { updatedInventory, updatedSales } = await deleteSaleRecord(saleId, true, inventory);
@@ -218,8 +269,9 @@ export default function App() {
 
   // Delete all sales for one customer
   const handleDeleteCustomerSales = async (contact: string) => {
+    const cleanTarget = (contact || '').trim().toLowerCase();
     const targetSales = sales.filter(
-      (s) => s.customer && s.customer.contact && s.customer.contact.trim() === contact.trim()
+      (s) => (s.customer?.contact || '').trim().toLowerCase() === cleanTarget
     );
     for (const s of targetSales) {
       await deleteSaleRecord(s.id, false);
@@ -261,8 +313,9 @@ export default function App() {
   };
 
   const handleDownloadLedgerPDF = async (contact: string, name: string) => {
+    const cleanTarget = (contact || '').trim().toLowerCase();
     const customerOrders = sales.filter(
-      (s) => s.customer && s.customer.contact && s.customer.contact.trim() === contact.trim()
+      (s) => (s.customer?.contact || '').trim().toLowerCase() === cleanTarget
     );
     if (customerOrders.length === 0) {
       showToast('No orders found for this customer.', 'info');
@@ -270,7 +323,7 @@ export default function App() {
     }
     try {
       await generateLedgerPDF(
-        name || 'Customer',
+        name || customerOrders[0]?.customer?.name || 'Customer',
         contact,
         customerOrders,
         currentUser ? currentUser.name : 'Admin'
@@ -282,9 +335,140 @@ export default function App() {
     }
   };
 
-  // WhatsApp dispatchers (anchor click prevents popup blocker in iframes)
-  const handleShareSaleWhatsApp = (sale: SaleRecord) => {
-    const url = formatWhatsAppUrlForSale(sale);
+  // Direct PDF Invoice WhatsApp Share (Shares the PDF document file directly; fallbacks to WhatsApp chat with invoice text)
+  const handleShareSaleWhatsApp = async (sale: SaleRecord) => {
+    try {
+      showToast('Generating PDF Invoice to share...', 'info');
+      const pdfFile = await getInvoicePDFFile(sale);
+
+      const itemsSummary = (sale.items || [])
+        .map((i) => `${i.name} x${i.qty}`)
+        .join(', ');
+      const shareTitle = `Invoice ${sale.id} - India Automobiles`;
+      const shareText = `Official Invoice #${sale.id} from India Automobiles. Customer: ${sale.customer.name}. Items: ${itemsSummary}. Total: Rs. ${sale.total.toFixed(2)}, Paid: Rs. ${sale.paid.toFixed(2)}, Due: Rs. ${sale.balance.toFixed(2)}. Proprietor: Khaja Mungle (+91 8055650977).`;
+
+      const result = await sharePDFFile(pdfFile, shareTitle, shareText);
+
+      // If Web Share was not handled natively, open WhatsApp chat so user can attach the downloaded PDF
+      if (!result.sharedDirectly) {
+        const waUrl = formatWhatsAppUrlForSale(sale);
+        if (waUrl && waUrl !== '#') {
+          const link = document.createElement('a');
+          link.href = waUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }
+        showToast(`PDF invoice downloaded (${pdfFile.name}) & WhatsApp opened to attach!`, 'success');
+      } else {
+        showToast('PDF invoice shared via WhatsApp / device share!', 'success');
+      }
+    } catch (err) {
+      console.error('Error sharing PDF invoice:', err);
+      // Fallback to text message WhatsApp link
+      const fallbackUrl = formatWhatsAppUrlForSale(sale);
+      if (fallbackUrl && fallbackUrl !== '#') {
+        const link = document.createElement('a');
+        link.href = fallbackUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      showToast('WhatsApp opened with invoice details.', 'info');
+    }
+  };
+
+  // WhatsApp Total Due Reminder for Customer (Generates and shares official PDF Statement directly)
+  const handleShareTotalDueReminderWhatsApp = async (contact: string, name: string) => {
+    const cleanTarget = (contact || '').trim().toLowerCase();
+    const customerOrders = sales.filter(
+      (s) => (s.customer?.contact || '').trim().toLowerCase() === cleanTarget
+    );
+    if (customerOrders.length === 0) {
+      showToast('No customer orders found to send reminder.', 'info');
+      return;
+    }
+
+    const customerName = name || customerOrders[0]?.customer?.name || 'Customer';
+    const totalSpent = customerOrders.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const totalPaid = customerOrders.reduce((sum, s) => sum + (Number(s.paid) || 0), 0);
+    const totalDue = Math.max(0, Number((totalSpent - totalPaid).toFixed(2)));
+    const pendingCount = customerOrders.filter(
+      (s) => Math.max(0, (Number(s.total) || 0) - (Number(s.paid) || 0)) > 0.001
+    ).length;
+
+    try {
+      showToast('Generating Official Due Reminder PDF for WhatsApp...', 'info');
+      const pdfFile = await getDueReminderPDFFile(
+        customerName,
+        contact,
+        customerOrders,
+        currentUser?.name || 'Admin'
+      );
+
+      const shareText =
+        totalDue > 0.01
+          ? `*INDIA AUTOMOBILES - PAYMENT DUE REMINDER*\n\nDear *${customerName}*,\nPlease find attached your official *Payment Due Reminder Statement PDF* from India Automobiles.\n\n📊 *Account Summary:*\n💰 Total Purchases: ₹${totalSpent.toFixed(2)}\n✅ Total Paid: ₹${totalPaid.toFixed(2)}\n⚠️ *TOTAL OUTSTANDING DUE: ₹${totalDue.toFixed(2)}* across ${pendingCount} pending bill(s).\n\nKindly arrange to clear this balance at your earliest convenience.\n📞 Proprietor: Khaja Mungle (+91 8055650977)`
+          : `*INDIA AUTOMOBILES - ACCOUNT FULLY SETTLED*\n\nDear *${customerName}*,\nYour account is fully cleared with ₹0.00 balance due. Thank you for doing business with India Automobiles!\n📞 Proprietor: Khaja Mungle (+91 8055650977)`;
+
+      const result = await sharePDFFile(
+        pdfFile,
+        `Payment Due Reminder - ${customerName} (₹${totalDue.toFixed(2)})`,
+        shareText
+      );
+
+      // If Web Share API didn't open native dialog (e.g. desktop Chrome), open WhatsApp chat link so user can attach the downloaded PDF
+      if (!result.sharedDirectly) {
+        const fallbackUrl = formatWhatsAppUrlForTotalDueReminder(customerName, contact, customerOrders);
+        if (fallbackUrl && fallbackUrl !== '#') {
+          const link = document.createElement('a');
+          link.href = fallbackUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }
+        showToast(
+          `Due Reminder PDF downloaded (${pdfFile.name}) & WhatsApp opened to attach!`,
+          'success'
+        );
+      } else {
+        showToast('Due Reminder PDF shared via WhatsApp / device share!', 'success');
+      }
+    } catch (err) {
+      console.error('Error generating/sharing Due Reminder PDF:', err);
+      // Fallback to text link if PDF generation encountered issue
+      const fallbackUrl = formatWhatsAppUrlForTotalDueReminder(customerName, contact, customerOrders);
+      if (fallbackUrl && fallbackUrl !== '#') {
+        const link = document.createElement('a');
+        link.href = fallbackUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      showToast('WhatsApp opened with reminder summary.', 'info');
+    }
+  };
+
+  // Retained for backward compatibility
+  const handleShareBillReminderWhatsApp = (sale: SaleRecord) => {
+    if (!sale || !sale.customer || !sale.customer.contact) {
+      showToast('Cannot send WhatsApp reminder: Customer contact number is missing.', 'error');
+      return;
+    }
+    const url = formatWhatsAppUrlForBillDueReminder(sale);
+    if (!url || url === '#') {
+      showToast('Cannot send WhatsApp reminder: Invalid contact number.', 'error');
+      return;
+    }
+    const bal = Math.max(0, (Number(sale.total) || 0) - (Number(sale.paid) || 0));
     const link = document.createElement('a');
     link.href = url;
     link.target = '_blank';
@@ -292,17 +476,28 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     link.remove();
+    showToast(
+      bal > 0.001
+        ? `WhatsApp reminder opened for Bill #${sale.id} (Due: ₹${bal.toFixed(2)})`
+        : `WhatsApp receipt opened for Bill #${sale.id}`,
+      'success'
+    );
   };
 
   const handleShareLedgerWhatsApp = (contact: string, name: string) => {
+    const cleanTarget = (contact || '').trim().toLowerCase();
     const customerOrders = sales.filter(
-      (s) => s.customer && s.customer.contact && s.customer.contact.trim() === contact.trim()
+      (s) => (s.customer?.contact || '').trim().toLowerCase() === cleanTarget
     );
     if (customerOrders.length === 0) {
       showToast('No orders found to share.', 'info');
       return;
     }
-    const url = formatWhatsAppUrlForLedger(name || 'Customer', contact, customerOrders);
+    const url = formatWhatsAppUrlForLedger(
+      name || customerOrders[0]?.customer?.name || 'Customer',
+      contact,
+      customerOrders
+    );
     const link = document.createElement('a');
     link.href = url;
     link.target = '_blank';
@@ -490,10 +685,11 @@ export default function App() {
                   showToast('Customer data refreshed.', 'info');
                 }}
                 onOpenLedger={(contact, name) => setLedgerModalCustomer({ contact, name })}
-                onShareWhatsApp={handleShareLedgerWhatsApp}
                 onDownloadLedgerPDF={handleDownloadLedgerPDF}
                 onBookOrder={handleBookOrderForCustomer}
                 onDeleteCustomerSales={handleDeleteCustomerSales}
+                onAdjustCustomerBalance={handleAdjustCustomerBalance}
+                onSendTotalDueReminderWhatsApp={handleShareTotalDueReminderWhatsApp}
               />
             )}
 
@@ -507,6 +703,7 @@ export default function App() {
                 onOpenPaymentModal={(sale) => setPaymentModalSale(sale)}
                 onDownloadPDF={handleDownloadInvoicePDF}
                 onShareWhatsApp={handleShareSaleWhatsApp}
+                onSendReminderWhatsApp={handleShareBillReminderWhatsApp}
                 onDeleteSale={handleDeleteSale}
                 onClearHistory={handleClearHistory}
                 onExportCSV={handleExportCSV}
@@ -567,8 +764,17 @@ export default function App() {
       {paymentModalSale && (
         <PaymentModal
           sale={paymentModalSale}
-          onClose={() => setPaymentModalSale(null)}
+          onClose={() => {
+            setPaymentModalSale(null);
+            if (returnToLedgerCustomer) {
+              setLedgerModalCustomer(returnToLedgerCustomer);
+              setReturnToLedgerCustomer(null);
+            }
+          }}
           onUpdatePayment={handleUpdatePayment}
+          onSendBillDueReminderWhatsApp={handleShareBillReminderWhatsApp}
+          onShareSaleWhatsApp={handleShareSaleWhatsApp}
+          onDownloadSalePDF={handleDownloadInvoicePDF}
         />
       )}
 
@@ -578,16 +784,22 @@ export default function App() {
           contact={ledgerModalCustomer.contact}
           name={ledgerModalCustomer.name}
           sales={sales}
-          onClose={() => setLedgerModalCustomer(null)}
+          onClose={() => {
+            setLedgerModalCustomer(null);
+            setReturnToLedgerCustomer(null);
+          }}
           onBookOrder={handleBookOrderForCustomer}
-          onShareWhatsApp={handleShareLedgerWhatsApp}
           onDownloadLedgerPDF={handleDownloadLedgerPDF}
           onOpenPaymentModal={(sale) => {
+            setReturnToLedgerCustomer(ledgerModalCustomer);
             setPaymentModalSale(sale);
             setLedgerModalCustomer(null);
           }}
           onDownloadSalePDF={handleDownloadInvoicePDF}
           onShareSaleWhatsApp={handleShareSaleWhatsApp}
+          onAdjustCustomerBalance={handleAdjustCustomerBalance}
+          onUpdatePayment={handleUpdatePayment}
+          onSendTotalDueReminderWhatsApp={handleShareTotalDueReminderWhatsApp}
         />
       )}
     </div>

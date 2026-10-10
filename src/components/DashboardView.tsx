@@ -56,24 +56,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   sales.forEach((s) => {
     const total = Number(s.total) || 0;
     const paid = Number(s.paid) || 0;
-    const balance = Number(s.balance) || 0;
+    const balance = Math.max(0, Number((total - paid).toFixed(2)));
     totalRevenue += total;
 
-    const contact = s.customer?.contact?.trim() || 'Unknown';
-    const name = s.customer?.name?.trim() || 'Unknown';
+    const rawContact = s.customer?.contact?.trim() || 'Unknown';
+    const cleanKey = rawContact.toLowerCase();
+    const rawName = s.customer?.name?.trim() || 'Unknown';
 
-    if (!custMap[contact]) {
-      custMap[contact] = {
-        name,
-        contact,
+    if (!custMap[cleanKey]) {
+      custMap[cleanKey] = {
+        name: rawName,
+        contact: rawContact,
         ordersCount: 0,
         totalSpent: 0,
         totalDue: 0
       };
+    } else {
+      if ((custMap[cleanKey].name === 'Unknown' || !custMap[cleanKey].name) && rawName !== 'Unknown') {
+        custMap[cleanKey].name = rawName;
+      }
     }
-    custMap[contact].ordersCount += 1;
-    custMap[contact].totalSpent += total;
-    custMap[contact].totalDue += balance;
+    custMap[cleanKey].ordersCount += 1;
+    custMap[cleanKey].totalSpent = Number((custMap[cleanKey].totalSpent + total).toFixed(2));
+    custMap[cleanKey].totalDue = Number((custMap[cleanKey].totalDue + balance).toFixed(2));
 
     const mode = (s.paymentMode || 'Cash').toLowerCase().trim();
     if (mode.includes('upi') || mode.includes('qr')) {

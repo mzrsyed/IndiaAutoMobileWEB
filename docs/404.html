@@ -2,21 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>Redirecting...</title>
+    <title>India Automobiles</title>
     <script>
-      // Single Page Apps for GitHub Pages redirection script
-      var pathSegmentsToKeep = 1;
-      var l = window.location;
-      l.replace(
-        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
-        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
-        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
-        l.hash
-      );
+      // Cleanly redirect any 404 path back to the application base
+      var repoBase = window.location.pathname.split('/').slice(0, 2).join('/') + '/';
+      window.location.replace(repoBase);
     </script>
   </head>
   <body>
-    <p>Redirecting to India Automobiles app...</p>
+    <p>Redirecting to India Automobiles...</p>
   </body>
 </html>

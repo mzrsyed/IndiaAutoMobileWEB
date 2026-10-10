@@ -4,7 +4,7 @@ import {
   RefreshCw,
   Users,
   FileText,
-  Send,
+  BellRing,
   Download,
   PlusCircle,
   Trash2
@@ -15,10 +15,12 @@ interface CustomersViewProps {
   sales: SaleRecord[];
   onRefresh: () => void;
   onOpenLedger: (contact: string, name: string) => void;
-  onShareWhatsApp: (contact: string, name: string) => void;
+  onShareWhatsApp?: (contact: string, name: string) => void;
   onDownloadLedgerPDF: (contact: string, name: string) => void;
   onBookOrder: (contact: string, name: string) => void;
   onDeleteCustomerSales: (contact: string) => void;
+  onAdjustCustomerBalance?: (contact: string, amount: number) => Promise<void>;
+  onSendTotalDueReminderWhatsApp?: (contact: string, name: string) => void;
 }
 
 export const CustomersView: React.FC<CustomersViewProps> = ({
@@ -28,7 +30,9 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   onShareWhatsApp,
   onDownloadLedgerPDF,
   onBookOrder,
-  onDeleteCustomerSales
+  onDeleteCustomerSales,
+  onAdjustCustomerBalance,
+  onSendTotalDueReminderWhatsApp
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
@@ -36,21 +40,29 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   // Group sales by customer contact
   const custMap: Record<string, CustomerSummary> = {};
   sales.forEach((s) => {
-    const contact = s.customer?.contact?.trim() || 'Unknown';
-    const name = s.customer?.name?.trim() || 'Unknown';
+    const rawContact = s.customer?.contact?.trim() || 'Unknown';
+    const cleanKey = rawContact.toLowerCase();
+    const rawName = s.customer?.name?.trim() || 'Unknown';
+    const totalVal = Number(s.total) || 0;
+    const paidVal = Number(s.paid) || 0;
+    const balVal = Math.max(0, Number((totalVal - paidVal).toFixed(2)));
 
-    if (!custMap[contact]) {
-      custMap[contact] = {
-        name,
-        contact,
+    if (!custMap[cleanKey]) {
+      custMap[cleanKey] = {
+        name: rawName,
+        contact: rawContact,
         ordersCount: 0,
         totalSpent: 0,
         totalDue: 0
       };
+    } else {
+      if ((custMap[cleanKey].name === 'Unknown' || !custMap[cleanKey].name) && rawName !== 'Unknown') {
+        custMap[cleanKey].name = rawName;
+      }
     }
-    custMap[contact].ordersCount += 1;
-    custMap[contact].totalSpent += Number(s.total) || 0;
-    custMap[contact].totalDue += Number(s.balance) || 0;
+    custMap[cleanKey].ordersCount += 1;
+    custMap[cleanKey].totalSpent = Number((custMap[cleanKey].totalSpent + totalVal).toFixed(2));
+    custMap[cleanKey].totalDue = Number((custMap[cleanKey].totalDue + balVal).toFixed(2));
   });
 
   const allCustomers = Object.values(custMap);
@@ -60,20 +72,20 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
     return c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q);
   });
 
-  const selectedCustomer = selectedContact ? custMap[selectedContact] : null;
+  const selectedCustomer = selectedContact ? custMap[selectedContact.toLowerCase()] : null;
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Header & Search */}
-        <div className="px-6 py-5 border-b border-gray-100 bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Header & Search - Sticky */}
+        <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/95 backdrop-blur-xs sticky top-0 z-20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xs">
           <div>
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-600" />
               Customer Records & Ledger
             </h2>
             <p className="text-xs text-gray-500">
-              Select a customer row to view full ledger statement, download PDF, or send WhatsApp update
+              Select a customer row to view full ledger statement, download PDF, or send WhatsApp due reminder PDF
             </p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -98,15 +110,24 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
           </div>
         </div>
 
-        {/* Selected Customer Action Toolbar */}
+        {/* Selected Customer Action Toolbar - Sticky underneath search header */}
         {selectedCustomer && (
-          <div className="bg-blue-50 px-6 py-3.5 border-b border-blue-100 flex flex-wrap items-center justify-between gap-3 transition-all">
+          <div className="bg-blue-50/95 backdrop-blur-xs px-6 py-3.5 border-b border-blue-100 sticky top-[73px] z-20 flex flex-wrap items-center justify-between gap-3 transition-all shadow-xs">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping" />
               <span className="text-xs font-bold text-gray-800">
                 Selected Customer:{' '}
                 <span className="text-blue-700 font-extrabold">{selectedCustomer.name}</span> (
                 <span className="font-mono">{selectedCustomer.contact}</span>)
+                {selectedCustomer.totalDue > 0 ? (
+                  <span className="ml-2 text-rose-700 font-bold bg-rose-100 px-2 py-0.5 rounded-md">
+                    Due: ₹{selectedCustomer.totalDue.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="ml-2 text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-md">
+                    Due Cleared (₹0)
+                  </span>
+                )}
               </span>
             </div>
 
@@ -119,12 +140,32 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                 <span>View Ledger</span>
               </button>
 
+              {/* WhatsApp Due Reminder (PDF File) - Replaces text message and ledger link */}
               <button
-                onClick={() => onShareWhatsApp(selectedCustomer.contact, selectedCustomer.name)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                onClick={() => {
+                  if (onSendTotalDueReminderWhatsApp) {
+                    onSendTotalDueReminderWhatsApp(selectedCustomer.contact, selectedCustomer.name);
+                  } else if (onShareWhatsApp) {
+                    onShareWhatsApp(selectedCustomer.contact, selectedCustomer.name);
+                  }
+                }}
+                className={`text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                  selectedCustomer.totalDue > 0.01
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                title={
+                  selectedCustomer.totalDue > 0.01
+                    ? `Share Official Due Reminder PDF (₹${selectedCustomer.totalDue.toFixed(2)}) directly to WhatsApp`
+                    : 'Send Account Settled PDF confirmation to WhatsApp'
+                }
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>WhatsApp Ledger</span>
+                <BellRing className="w-3.5 h-3.5" />
+                <span>
+                  {selectedCustomer.totalDue > 0.01
+                    ? `WhatsApp Due Reminder PDF (₹${selectedCustomer.totalDue.toFixed(2)})`
+                    : 'WhatsApp Settled PDF'}
+                </span>
               </button>
 
               <button
@@ -165,27 +206,27 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
           </div>
         )}
 
-        {/* Table */}
-        <div className="overflow-x-auto table-container">
+        {/* Table with Sticky Headers */}
+        <div className="overflow-x-auto max-h-[68vh] overflow-y-auto table-container">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/95 backdrop-blur-xs sticky top-0 z-10 shadow-2xs">
               <tr>
-                <th scope="col" className="w-12 px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 w-12 px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">
                   Select
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Customer Name
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Contact Number
                 </th>
-                <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Total Purchases
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Total Amount Spent
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="sticky top-0 bg-gray-50 z-10 px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Due Balance
                 </th>
               </tr>
