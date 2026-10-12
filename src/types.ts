@@ -66,3 +66,11 @@ export interface PaymentMetrics {
 }
 
 export type TabType = 'dashboard' | 'inventory' | 'billing' | 'customers' | 'history' | 'users';
+
+export const SHOP_DETAILS = {
+  name: 'INDIA AUTOMOBILES',
+  proprietor: 'Khaja Mungle',
+  contact: '+91 8055650977',
+  address: 'Near ICICI Bank Main Road Ausa',
+  tagline: 'Local Inventory & Customer Billing Management System'
+};

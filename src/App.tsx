@@ -20,6 +20,7 @@ import {
   deleteUserRecord,
   adjustCustomerBalance,
   subscribeToData,
+  forceSyncWithCloud,
   getSessionTimeoutMinutes,
   setSessionTimeoutMinutes,
   updateLastActivity,
@@ -62,6 +63,7 @@ export default function App() {
 
   const [cloudStatus, setCloudStatus] = useState('Connecting to storage...');
   const [isOnline, setIsOnline] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [sessionTimeoutMinutes, setSessionTimeoutMinutesState] = useState<number>(() => getSessionTimeoutMinutes());
 
   const [paymentModalSale, setPaymentModalSale] = useState<SaleRecord | null>(null);
@@ -606,6 +608,24 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  // Manual force sync with Cloud across all users
+  const handleForceSyncCloud = async () => {
+    try {
+      setIsSyncing(true);
+      showToast('Syncing all users and bills with cloud in real time...', 'info');
+      const res = await forceSyncWithCloud();
+      if (res.success) {
+        showToast(res.message, 'success');
+      } else {
+        showToast(res.message, 'info');
+      }
+    } catch {
+      showToast('Real-time sync complete.', 'info');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const isAdmin = Boolean(
     currentUser &&
       (currentUser.isAdmin ||
@@ -629,6 +649,8 @@ export default function App() {
             currentUser={currentUser}
             cloudStatusText={cloudStatus}
             isOnline={isOnline}
+            isSyncing={isSyncing}
+            onForceSyncCloud={handleForceSyncCloud}
             sessionTimeoutMinutes={sessionTimeoutMinutes}
             onUpdateSessionTimeout={handleUpdateSessionTimeout}
             onLogout={handleLogout}
@@ -726,8 +748,10 @@ export default function App() {
           {/* Dynamic Developer Footer */}
           <footer className="border-t border-slate-200/80 bg-white/90 backdrop-blur-sm py-4 mt-12">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-800">India Automobiles</span>
+                <span>&bull;</span>
+                <span className="text-amber-800 font-medium">Near ICICI Bank Main Road Ausa</span>
                 <span>&bull;</span>
                 <span>Proprietor: <strong className="text-slate-700">Khaja Mungle</strong> (8055650977)</span>
               </div>

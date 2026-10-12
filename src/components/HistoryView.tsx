@@ -7,9 +7,15 @@ import {
   Edit,
   Download,
   Send,
-  ReceiptText
+  ReceiptText,
+  Eye,
+  Printer,
+  X,
+  MapPin,
+  FileText
 } from 'lucide-react';
 import { SaleRecord } from '../types';
+import { BrandLogo } from './Logo';
 
 interface HistoryViewProps {
   sales: SaleRecord[];
@@ -36,6 +42,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [viewingSale, setViewingSale] = useState<SaleRecord | null>(null);
 
   const filteredSales = sales.filter((s) => {
     const q = searchQuery.toLowerCase().trim();
@@ -120,6 +127,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setViewingSale(selectedSale)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                title="View Bill in tabular format with serial numbers"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>View Bill</span>
+              </button>
+
               <button
                 onClick={() => onOpenPaymentModal(selectedSale)}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
@@ -258,6 +274,212 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Bill Preview Modal in Tabular Format with Serial Numbers and Shop Address */}
+      {viewingSale && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden max-h-[92vh] flex flex-col animate-in fade-in">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sticky top-0 z-10 flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <BrandLogo className="w-11 h-11 border border-white/20 bg-white p-1 rounded-xl shadow-md shrink-0" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black tracking-tight text-white uppercase">
+                      INDIA AUTOMOBILES
+                    </h3>
+                    <span className="bg-green-500/20 border border-green-400 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                      Invoice #{viewingSale.id}
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mt-0.5">
+                    <MapPin className="w-3 h-3 shrink-0 text-amber-400" />
+                    <span>Near ICICI Bank Main Road Ausa</span>
+                  </p>
+                  <p className="text-[11px] text-slate-300">
+                    Proprietor: <strong className="text-white">Khaja Mungle</strong> (+91 8055650977)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingSale(null)}
+                className="text-white/70 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Bill Content */}
+            <div className="p-5 overflow-y-auto space-y-4">
+              {/* Customer and Sale Meta */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-gray-50 p-3.5 rounded-xl border border-gray-200 text-xs">
+                <div>
+                  <span className="text-[10px] uppercase text-gray-500 font-bold block">Customer Name</span>
+                  <span className="font-bold text-gray-900 text-sm">{viewingSale.customer.name}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase text-gray-500 font-bold block">Mobile Number</span>
+                  <span className="font-mono font-bold text-gray-800 text-sm">{viewingSale.customer.contact}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase text-gray-500 font-bold block">Date & Time</span>
+                  <span className="font-medium text-gray-700">{new Date(viewingSale.timestamp).toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase text-gray-500 font-bold block">Payment Mode</span>
+                  <span className="font-bold text-indigo-700">{viewingSale.paymentMode || 'Cash'}</span>
+                </div>
+              </div>
+
+              {/* Items Table in Tabular Format with Serial Numbers */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Purchased Items List</span>
+                </h4>
+                <div className="border border-gray-200 rounded-xl overflow-x-auto shadow-2xs">
+                  <table className="min-w-full divide-y divide-gray-200 text-left text-xs">
+                    <thead className="bg-slate-900 text-white font-bold uppercase tracking-wider">
+                      <tr>
+                        <th scope="col" className="px-3 py-2.5 text-center w-12">
+                          Sr. No.
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 text-left">
+                          Item Code
+                        </th>
+                        <th scope="col" className="px-4 py-2.5 text-left">
+                          Item Name / Description
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 text-center w-16">
+                          Qty
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 text-right">
+                          Rate (₹)
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 text-center">
+                          Disc (%)
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 text-right">
+                          Net Rate (₹)
+                        </th>
+                        <th scope="col" className="px-4 py-2.5 text-right font-black">
+                          Total (₹)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {viewingSale.items.map((item, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                          <td className="px-3 py-2 text-center font-bold text-slate-700 bg-slate-50">
+                            {idx + 1}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-slate-600">
+                            {item.code && item.code !== '-' ? item.code : '-'}
+                          </td>
+                          <td className="px-4 py-2 font-semibold text-slate-900">
+                            {item.name}
+                          </td>
+                          <td className="px-3 py-2 text-center font-bold text-slate-800">
+                            {item.qty}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-600">
+                            ₹{(Number(item.basePrice) || 0).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {item.discountPct ? `${item.discountPct}%` : '0%'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-700">
+                            ₹{(Number(item.price) || 0).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2 text-right font-bold text-slate-900">
+                            ₹{(Number(item.total) || 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-gray-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="text-gray-500 space-y-0.5">
+                    <p><strong>Shop Address:</strong> Near ICICI Bank Main Road Ausa</p>
+                    <p><strong>Proprietor:</strong> Khaja Mungle (+91 8055650977)</p>
+                    <p><strong>Billed By:</strong> {viewingSale.generatedBy || 'Admin'}</p>
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal:</span>
+                      <span className="font-semibold">₹{(viewingSale.subtotal || viewingSale.total).toFixed(2)}</span>
+                    </div>
+                    {viewingSale.discountAmount ? (
+                      <div className="flex justify-between text-orange-600">
+                        <span>Discount:</span>
+                        <span className="font-semibold">-₹{viewingSale.discountAmount.toFixed(2)}</span>
+                      </div>
+                    ) : null}
+                    <div className="flex justify-between text-sm font-black text-gray-900 pt-1 border-t border-gray-200">
+                      <span>Grand Total:</span>
+                      <span className="text-base text-indigo-950 font-extrabold">₹{viewingSale.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-emerald-700">
+                      <span>Amount Paid:</span>
+                      <span>₹{viewingSale.paid.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold pt-1 border-t border-dashed border-gray-200">
+                      <span>Balance Due:</span>
+                      <span className={viewingSale.balance > 0 ? 'text-rose-600 font-black' : 'text-emerald-700'}>
+                        {viewingSale.balance > 0 ? `₹${viewingSale.balance.toFixed(2)} (Due)` : '₹0.00 (Fully Paid)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="bg-gray-50 px-5 py-3.5 border-t border-gray-100 flex flex-wrap justify-between items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onShareWhatsApp(viewingSale)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>WhatsApp PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDownloadPDF(viewingSale)}
+                  className="bg-gray-900 hover:bg-black text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingSale(null)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

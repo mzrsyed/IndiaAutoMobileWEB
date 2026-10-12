@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, LogOut, Clock, ChevronDown } from 'lucide-react';
+import { Download, Upload, LogOut, Clock, ChevronDown, RefreshCw, MapPin } from 'lucide-react';
 import { SystemUser } from '../types';
 import { BrandLogo } from './Logo';
 
@@ -7,6 +7,8 @@ interface HeaderProps {
   currentUser: SystemUser | null;
   cloudStatusText: string;
   isOnline: boolean;
+  isSyncing?: boolean;
+  onForceSyncCloud?: () => void;
   sessionTimeoutMinutes: number;
   onUpdateSessionTimeout: (minutes: number) => void;
   onLogout: () => void;
@@ -18,6 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   cloudStatusText,
   isOnline,
+  isSyncing = false,
+  onForceSyncCloud,
   sessionTimeoutMinutes,
   onUpdateSessionTimeout,
   onLogout,
@@ -57,26 +61,49 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex justify-between h-16 items-center gap-2">
           {/* Logo & Branding */}
           <div className="flex items-center">
-            <BrandLogo className="h-11 w-11 p-0.5 border border-gray-200 shadow-sm mr-3 bg-white" />
+            <BrandLogo className="h-11 w-11 p-0.5 border border-gray-200 shadow-sm mr-3 bg-white shrink-0" />
             <div>
               <h1 className="text-xl font-bold text-gray-900 tracking-tight leading-none">
                 India Automobiles
               </h1>
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
-                <span
-                  className={`text-[10px] font-medium flex items-center gap-1 ${
-                    isOnline ? 'text-green-600' : 'text-amber-600'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      isOnline ? 'bg-green-500 animate-pulse' : 'bg-amber-500'
+                {onForceSyncCloud ? (
+                  <button
+                    type="button"
+                    onClick={onForceSyncCloud}
+                    title="Click to force real-time sync with cloud across all users"
+                    className={`text-[10px] font-semibold flex items-center gap-1 px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                      isOnline
+                        ? 'text-green-700 bg-green-50 hover:bg-green-100 border border-green-200'
+                        : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200'
                     }`}
-                  />
-                  {cloudStatusText}
-                </span>
+                  >
+                    <RefreshCw
+                      className={`w-2.5 h-2.5 ${isSyncing ? 'animate-spin text-blue-600' : isOnline ? 'text-green-600' : 'text-amber-600'}`}
+                    />
+                    <span>{isSyncing ? 'Syncing Cloud...' : cloudStatusText}</span>
+                  </button>
+                ) : (
+                  <span
+                    className={`text-[10px] font-medium flex items-center gap-1 ${
+                      isOnline ? 'text-green-600' : 'text-amber-600'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isOnline ? 'bg-green-500 animate-pulse' : 'bg-amber-500'
+                      }`}
+                    />
+                    {cloudStatusText}
+                  </span>
+                )}
                 <span className="text-[10px] text-gray-300 hidden sm:inline">|</span>
-                <span className="text-[10px] text-gray-600 font-medium hidden sm:inline">
+                <span className="text-[10px] text-gray-600 font-medium hidden md:inline flex items-center gap-1">
+                  <MapPin className="w-2.5 h-2.5 text-red-500 inline shrink-0" />
+                  <span>Near ICICI Bank Main Road Ausa</span>
+                </span>
+                <span className="text-[10px] text-gray-300 hidden lg:inline">|</span>
+                <span className="text-[10px] text-gray-600 font-medium hidden lg:inline">
                   Proprietor: <strong className="text-gray-900">Khaja Mungle</strong> (8055650977)
                 </span>
               </div>

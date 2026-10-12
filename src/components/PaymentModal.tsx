@@ -341,29 +341,48 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
           )}
 
-          {/* Purchased Items Accordion/List */}
+          {/* Purchased Items Table with Serial Numbers */}
           <div>
-            <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">
-              Items in this bill ({sale.items.length})
-            </label>
-            <div className="space-y-1 border border-gray-200 rounded-xl p-2.5 bg-gray-50/60 max-h-32 overflow-y-auto">
-              {sale.items.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex justify-between items-center text-[11px] text-gray-700 py-0.5 border-b border-gray-100 last:border-0"
-                >
-                  <span className="truncate pr-2">
-                    {item.name}{' '}
-                    {item.code && item.code !== '-' && (
-                      <span className="font-mono text-gray-400">[{item.code}]</span>
-                    )}{' '}
-                    (x{item.qty})
-                  </span>
-                  <span className="font-bold text-gray-900 shrink-0">
-                    ₹{(Number(item.total) || 0).toFixed(2)}
-                  </span>
-                </div>
-              ))}
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-[11px] font-bold text-gray-700 uppercase">
+                Items in this bill ({sale.items.length})
+              </label>
+              <span className="text-[10px] text-gray-500">
+                Near ICICI Bank Main Road Ausa
+              </span>
+            </div>
+            <div className="border border-gray-200 rounded-xl overflow-hidden max-h-36 overflow-y-auto">
+              <table className="min-w-full text-[11px] divide-y divide-gray-200">
+                <thead className="bg-gray-100 text-gray-700 font-bold">
+                  <tr>
+                    <th className="px-2 py-1.5 text-center w-8">Sr.</th>
+                    <th className="px-2.5 py-1.5 text-left">Item Description</th>
+                    <th className="px-2 py-1.5 text-center w-12">Qty</th>
+                    <th className="px-2.5 py-1.5 text-right">Total (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {sale.items.map((item, idx) => (
+                    <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                      <td className="px-2 py-1 text-center font-bold text-gray-500 bg-gray-50">
+                        {idx + 1}
+                      </td>
+                      <td className="px-2.5 py-1 text-gray-900 font-medium truncate max-w-[200px]" title={item.name}>
+                        {item.name}{' '}
+                        {item.code && item.code !== '-' && (
+                          <span className="font-mono text-gray-400 text-[10px]">[{item.code}]</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-center font-bold text-gray-700">
+                        {item.qty}
+                      </td>
+                      <td className="px-2.5 py-1 text-right font-bold text-gray-900">
+                        ₹{(Number(item.total) || 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 

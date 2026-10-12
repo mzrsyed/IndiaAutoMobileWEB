@@ -15,7 +15,6 @@ interface CustomersViewProps {
   sales: SaleRecord[];
   onRefresh: () => void;
   onOpenLedger: (contact: string, name: string) => void;
-  onShareWhatsApp?: (contact: string, name: string) => void;
   onDownloadLedgerPDF: (contact: string, name: string) => void;
   onBookOrder: (contact: string, name: string) => void;
   onDeleteCustomerSales: (contact: string) => void;
@@ -145,8 +144,6 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                 onClick={() => {
                   if (onSendTotalDueReminderWhatsApp) {
                     onSendTotalDueReminderWhatsApp(selectedCustomer.contact, selectedCustomer.name);
-                  } else if (onShareWhatsApp) {
-                    onShareWhatsApp(selectedCustomer.contact, selectedCustomer.name);
                   }
                 }}
                 className={`text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer ${

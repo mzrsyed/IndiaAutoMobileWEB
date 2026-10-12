@@ -18,8 +18,8 @@ export function formatWhatsAppUrlForSale(sale: SaleRecord): string {
   const message =
 `*INDIA AUTOMOBILES - Invoice / Bill*
 --------------------------------
-👤 *Proprietor:* Khaja Mungle
-📞 *Owner Contact:* +91 8055650977
+📍 *Address:* Near ICICI Bank Main Road Ausa
+👤 *Proprietor:* Khaja Mungle (+91 8055650977)
 📄 *Invoice ID:* ${sale.id}
 📅 *Date:* ${dateStr}
 👤 *Customer:* ${sale.customer.name}
@@ -65,6 +65,7 @@ export function formatWhatsAppUrlForLedger(
   const message =
 `*INDIA AUTOMOBILES - Customer Account Ledger*
 --------------------------------
+📍 *Address:* Near ICICI Bank Main Road Ausa
 👤 *Proprietor:* Khaja Mungle (+91 8055650977)
 👤 *Customer:* ${customerName}
 📱 *Phone:* ${contact}
@@ -125,8 +126,8 @@ export function formatWhatsAppUrlForTotalDueReminder(
     message =
 `*INDIA AUTOMOBILES - TOTAL ACCOUNT DUE REMINDER*
 --------------------------------
-👤 *Proprietor:* Khaja Mungle
-📞 *Owner Contact:* +91 8055650977
+📍 *Address:* Near ICICI Bank Main Road Ausa
+👤 *Proprietor:* Khaja Mungle (+91 8055650977)
 👤 *Customer Name:* ${customerName}
 📱 *Customer Phone:* ${contact}
 📅 *Date:* ${new Date().toLocaleDateString()}
@@ -191,8 +192,8 @@ export function formatWhatsAppUrlForBillDueReminder(sale: SaleRecord): string {
     message =
 `*INDIA AUTOMOBILES - PAYMENT DUE REMINDER*
 --------------------------------
-👤 *Proprietor:* Khaja Mungle
-📞 *Owner Contact:* +91 8055650977
+📍 *Address:* Near ICICI Bank Main Road Ausa
+👤 *Proprietor:* Khaja Mungle (+91 8055650977)
 📄 *Invoice / Bill ID:* #${sale.id}
 📅 *Date:* ${dateStr}
 👤 *Customer Name:* ${sale.customer.name}

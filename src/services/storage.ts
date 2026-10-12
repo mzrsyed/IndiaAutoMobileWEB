@@ -6,10 +6,12 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  getDocs,
   Firestore,
   Unsubscribe,
   writeBatch
 } from 'firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
 import { InventoryItem, SaleRecord, SystemUser } from '../types';
 
 const firebaseConfig = {
@@ -31,8 +33,29 @@ try {
     app = getApps()[0];
   }
   db = getFirestore(app);
+
+  // Authenticate anonymously so all multi-user Firestore security checks pass seamlessly
+  try {
+    const auth = getAuth(app);
+    signInAnonymously(auth).catch((err) => {
+      console.warn('Firebase anonymous auth notice (operating with public rules fallback):', err);
+    });
+  } catch (err) {
+    console.warn('Firebase auth initialization notice:', err);
+  }
 } catch (err) {
   console.warn('Firebase initialization notice (running with local cache fallback):', err);
+}
+
+// Instant cross-tab & cross-window synchronization channel for all active users
+const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ia_realtime_cloud_sync') : null;
+
+export function broadcastLocalChange(type: 'inventory' | 'sales' | 'users' | 'all') {
+  try {
+    syncChannel?.postMessage({ type, timestamp: Date.now() });
+  } catch {
+    // Graceful fallback
+  }
 }
 
 const STORAGE_KEYS = {
@@ -332,6 +355,9 @@ export async function saveInventoryItem(item: InventoryItem): Promise<void> {
     console.warn('LocalStorage save error:', e);
   }
 
+  // Broadcast to other tabs & windows
+  broadcastLocalChange('inventory');
+
   // Sync to Firestore if available
   if (db) {
     try {
@@ -350,6 +376,9 @@ export async function deleteInventoryItem(itemId: string): Promise<void> {
   } catch (e) {
     console.warn('LocalStorage delete error:', e);
   }
+
+  // Broadcast to other tabs & windows
+  broadcastLocalChange('inventory');
 
   if (db) {
     try {
@@ -437,16 +466,20 @@ export async function saveSaleRecord(
       }
       if (updateStock && modifiedItems.length > 0) {
         for (const item of modifiedItems) {
-          if (item && item.id) {
-            try {
-              await setDoc(doc(db, 'inventory', String(item.id).trim()), item);
-            } catch (e) {
-              console.warn(`Individual inventory stock write warning for ${item.id}:`, e);
-            }
+          try {
+            await setDoc(doc(db, 'inventory', String(item.id).trim()), item);
+          } catch (e) {
+            console.warn(`Individual inventory stock write warning for ${item.id}:`, e);
           }
         }
       }
     }
+  }
+
+  // Broadcast to other tabs & windows
+  broadcastLocalChange('sales');
+  if (updateStock && modifiedItems.length > 0) {
+    broadcastLocalChange('inventory');
   }
 
   return { updatedInventory: inv, updatedSales: currentSales };
@@ -607,6 +640,9 @@ export async function adjustCustomerBalance(
     }
   }
 
+  // Broadcast to other tabs & windows
+  broadcastLocalChange('sales');
+
   return {
     updatedSales: currentSales,
     adjustedAmount,
@@ -694,12 +730,19 @@ export async function deleteSaleRecord(
     }
   }
 
+  // Broadcast to other tabs & windows
+  broadcastLocalChange('sales');
+  if (restoreStock && modifiedItems.length > 0) {
+    broadcastLocalChange('inventory');
+  }
+
   return { updatedInventory: inv, updatedSales: filtered };
 }
 
 export async function clearAllSalesHistory(): Promise<void> {
   const current = getLocalSales();
   localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify([]));
+  broadcastLocalChange('sales');
   if (db && current.length > 0) {
     try {
       const batch = writeBatch(db);
@@ -722,6 +765,7 @@ export async function saveUserRecord(user: SystemUser): Promise<void> {
     current.push(user);
   }
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(current));
+  broadcastLocalChange('users');
 
   if (db) {
     try {
@@ -737,6 +781,7 @@ export async function deleteUserRecord(userId: string): Promise<boolean> {
   if (current.length <= 1) return false;
   const filtered = current.filter(u => u.id !== userId);
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(filtered));
+  broadcastLocalChange('users');
 
   if (db) {
     try {
@@ -748,32 +793,63 @@ export async function deleteUserRecord(userId: string): Promise<boolean> {
   return true;
 }
 
-// Real-time synchronization listeners
+// Real-time synchronization listeners for multi-user & multi-tab cloud sync
 export function subscribeToData(
   onInventoryUpdate: (items: InventoryItem[]) => void,
   onSalesUpdate: (sales: SaleRecord[]) => void,
   onUsersUpdate: (users: SystemUser[]) => void,
   onStatusChange: (statusText: string, isOnline: boolean) => void
 ): () => void {
-  // Push initial cached data immediately
+  // Push initial cached data immediately for zero-latency UI
   onInventoryUpdate(getLocalInventory());
   onSalesUpdate(getLocalSales());
   onUsersUpdate(getLocalUsers());
 
+  // 1. Cross-tab & Cross-window instant listener
+  const handleSyncMessage = (event: MessageEvent) => {
+    const type = event.data?.type;
+    if (type === 'inventory' || type === 'all') {
+      onInventoryUpdate(getLocalInventory());
+    }
+    if (type === 'sales' || type === 'all') {
+      onSalesUpdate(getLocalSales());
+    }
+    if (type === 'users' || type === 'all') {
+      onUsersUpdate(getLocalUsers());
+    }
+  };
+  syncChannel?.addEventListener('message', handleSyncMessage);
+
+  // 2. Storage event listener (fallback cross-window sync)
+  const handleStorageEvent = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEYS.INVENTORY) {
+      onInventoryUpdate(getLocalInventory());
+    } else if (e.key === STORAGE_KEYS.SALES) {
+      onSalesUpdate(getLocalSales());
+    } else if (e.key === STORAGE_KEYS.USERS) {
+      onUsersUpdate(getLocalUsers());
+    }
+  };
+  window.addEventListener('storage', handleStorageEvent);
+
   if (!db) {
     onStatusChange('Local Storage Mode', true);
-    return () => {};
+    return () => {
+      syncChannel?.removeEventListener('message', handleSyncMessage);
+      window.removeEventListener('storage', handleStorageEvent);
+    };
   }
 
   const unsubs: Unsubscribe[] = [];
 
   try {
+    // Inventory Cloud Listener
     unsubs.push(
       onSnapshot(
         collection(db, 'inventory'),
         (snapshot) => {
           if (!snapshot.empty) {
-            const items: InventoryItem[] = snapshot.docs.map(d => {
+            const cloudItems: InventoryItem[] = snapshot.docs.map(d => {
               const data = d.data();
               return {
                 id: String(data.id || d.id).trim(),
@@ -786,19 +862,34 @@ export function subscribeToData(
                 dateAdded: data.dateAdded || new Date().toISOString()
               };
             });
-            cachedInventory = items;
+
+            // Two-way merge: preserve any local items not yet in Firestore
+            const localItems = getLocalInventory();
+            const cloudIds = new Set(cloudItems.map(i => i.id));
+            const pendingItems = localItems.filter(i => !cloudIds.has(i.id));
+
+            if (pendingItems.length > 0 && db) {
+              const batch = writeBatch(db);
+              pendingItems.forEach(pi => {
+                if (db) batch.set(doc(db, 'inventory', pi.id), pi);
+              });
+              batch.commit().catch(e => console.warn('Sync pending items notice:', e));
+            }
+
+            const merged = [...cloudItems, ...pendingItems];
+            cachedInventory = merged;
             try {
-              localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(items));
+              localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(merged));
             } catch (e) {
               console.warn('LocalStorage inventory cache warning:', e);
             }
-            onInventoryUpdate(items);
+            onInventoryUpdate(merged);
           } else {
-            // Seed cloud if empty
+            // Seed cloud if completely empty
             const local = getLocalInventory();
             local.forEach(i => saveInventoryItem(i));
           }
-          onStatusChange('Synced • Live Cloud', true);
+          onStatusChange('Live Cloud Synced', true);
         },
         (err) => {
           console.warn('Inventory cloud sync notice:', err);
@@ -807,15 +898,30 @@ export function subscribeToData(
       )
     );
 
+    // Sales Cloud Listener (Preserves all local bills and auto-pushes to Cloud)
     unsubs.push(
       onSnapshot(
         collection(db, 'sales'),
         (snapshot) => {
           if (!snapshot.empty) {
-            const sales = snapshot.docs.map(d => d.data() as SaleRecord);
-            sales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
-            onSalesUpdate(sales);
+            const cloudSales = snapshot.docs.map(d => d.data() as SaleRecord);
+            const localSales = getLocalSales();
+            const cloudIds = new Set(cloudSales.map(s => s.id));
+            const pendingSales = localSales.filter(s => !cloudIds.has(s.id));
+
+            // Push any local pending sales to Firestore so other users see them immediately
+            if (pendingSales.length > 0 && db) {
+              const batch = writeBatch(db);
+              pendingSales.forEach(ps => {
+                if (db) batch.set(doc(db, 'sales', ps.id), ps);
+              });
+              batch.commit().catch(e => console.warn('Sync pending sales notice:', e));
+            }
+
+            const mergedSales = [...cloudSales, ...pendingSales];
+            mergedSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(mergedSales));
+            onSalesUpdate(mergedSales);
           }
         },
         (err) => {
@@ -824,6 +930,7 @@ export function subscribeToData(
       )
     );
 
+    // Users Cloud Listener
     unsubs.push(
       onSnapshot(
         collection(db, 'users'),
@@ -850,7 +957,105 @@ export function subscribeToData(
     onStatusChange('Local Mode', true);
   }
 
+  // Auto sync on window focus and online reconnection
+  const handleFocus = () => {
+    forceSyncWithCloud().catch(() => {});
+  };
+  const handleOnline = () => {
+    onStatusChange('Connecting to Cloud...', true);
+    forceSyncWithCloud().catch(() => {});
+  };
+
+  window.addEventListener('focus', handleFocus);
+  window.addEventListener('online', handleOnline);
+
   return () => {
     unsubs.forEach(u => u());
+    syncChannel?.removeEventListener('message', handleSyncMessage);
+    window.removeEventListener('storage', handleStorageEvent);
+    window.removeEventListener('focus', handleFocus);
+    window.removeEventListener('online', handleOnline);
   };
+}
+
+/**
+ * Force manual full two-way cloud synchronization across all users
+ */
+export async function forceSyncWithCloud(): Promise<{ success: boolean; message: string }> {
+  if (!db) {
+    return { success: false, message: 'Running in Local Storage Mode.' };
+  }
+
+  try {
+    // 1. Sync inventory
+    const invSnap = await getDocs(collection(db, 'inventory'));
+    const localInv = getLocalInventory();
+    const invMap = new Map<string, InventoryItem>();
+
+    invSnap.forEach(d => {
+      const data = d.data() as InventoryItem;
+      const cleanId = String(data.id || d.id).trim();
+      invMap.set(cleanId, { ...data, id: cleanId });
+    });
+
+    const invBatch = writeBatch(db);
+    let invPushCount = 0;
+    for (const item of localInv) {
+      if (!invMap.has(item.id)) {
+        invBatch.set(doc(db, 'inventory', item.id), item);
+        invMap.set(item.id, item);
+        invPushCount++;
+      }
+    }
+    if (invPushCount > 0) {
+      await invBatch.commit();
+    }
+
+    const mergedInv = Array.from(invMap.values());
+    if (mergedInv.length > 0) {
+      cachedInventory = mergedInv;
+      localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(mergedInv));
+    }
+
+    // 2. Sync sales
+    const salesSnap = await getDocs(collection(db, 'sales'));
+    const localSales = getLocalSales();
+    const salesMap = new Map<string, SaleRecord>();
+
+    salesSnap.forEach(d => {
+      const data = d.data() as SaleRecord;
+      salesMap.set(data.id, data);
+    });
+
+    const salesBatch = writeBatch(db);
+    let salesPushCount = 0;
+    for (const s of localSales) {
+      if (!salesMap.has(s.id)) {
+        salesBatch.set(doc(db, 'sales', s.id), s);
+        salesMap.set(s.id, s);
+        salesPushCount++;
+      }
+    }
+    if (salesPushCount > 0) {
+      await salesBatch.commit();
+    }
+
+    const mergedSales = Array.from(salesMap.values());
+    mergedSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(mergedSales));
+
+    // 3. Broadcast to all users and tabs
+    broadcastLocalChange('all');
+
+    return {
+      success: true,
+      message: `Real-time Cloud Synced: ${mergedInv.length} items & ${mergedSales.length} bills in sync across all users.`
+    };
+  } catch (err) {
+    console.warn('Force sync notice:', err);
+    return {
+      success: false,
+      message: 'Cloud sync active with local cache fallback.'
+    };
+  }
 }

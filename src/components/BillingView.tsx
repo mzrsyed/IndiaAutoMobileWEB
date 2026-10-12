@@ -7,7 +7,10 @@ import {
   Download,
   Share2,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Printer,
+  MapPin,
+  FileText
 } from 'lucide-react';
 import { InventoryItem, CartItem, SaleRecord, SystemUser } from '../types';
 import { BrandLogo } from './Logo';
@@ -727,86 +730,243 @@ export const BillingView: React.FC<BillingViewProps> = ({
                 </div>
               </form>
 
-              {/* Invoice Success Panel */}
+              {/* Generated Bill in Tabular Format with Serial Numbers & Shop Address */}
               {lastSale && (
-                <div className="mt-6 bg-green-50 border border-green-200 rounded-2xl p-5 transition-all">
-                  <div className="flex items-center gap-3 mb-3">
-                    <BrandLogo className="w-10 h-10 border border-green-300 bg-white p-0.5" />
-                    <div>
-                      <h3 className="text-sm font-bold text-green-900">
-                        Bill Generated Successfully
-                      </h3>
-                      <p className="text-[11px] text-green-700 font-semibold">
-                        India Automobiles &bull; Khaja Mungle (+91 8055650977)
-                      </p>
+                <div className="mt-8 bg-white border-2 border-green-500 rounded-2xl shadow-xl overflow-hidden transition-all animate-in fade-in">
+                  {/* Shop & Bill Header */}
+                  <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/10 pb-4 mb-4">
+                      <div className="flex items-center gap-3.5">
+                        <BrandLogo className="w-12 h-12 border border-white/20 bg-white p-1 rounded-xl shadow-md shrink-0" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-black tracking-tight text-white uppercase">
+                              INDIA AUTOMOBILES
+                            </h3>
+                            <span className="bg-green-500/20 border border-green-400 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                              Tax / Retail Bill
+                            </span>
+                          </div>
+                          <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mt-0.5">
+                            <MapPin className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                            <span>Near ICICI Bank Main Road Ausa</span>
+                          </p>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            Proprietor: <strong className="text-white">Khaja Mungle</strong> | Phone: +91 8055650977
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-left sm:text-right bg-white/10 px-4 py-2.5 rounded-xl border border-white/10 shrink-0">
+                        <div className="text-[10px] uppercase tracking-wider text-slate-300 font-bold">
+                          Bill / Invoice ID
+                        </div>
+                        <div className="text-base font-mono font-black text-amber-300">
+                          {lastSale.id}
+                        </div>
+                        <div className="text-[11px] text-slate-300 mt-0.5">
+                          {new Date(lastSale.timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Customer & Bill Meta */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-white/5 p-3 rounded-xl border border-white/10">
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 font-bold block">Customer Name</span>
+                        <span className="font-bold text-white text-sm">{lastSale.customer.name}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 font-bold block">Mobile Number</span>
+                        <span className="font-mono font-bold text-slate-200 text-sm">{lastSale.customer.contact}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 font-bold block">Payment Mode</span>
+                        <span className="font-bold text-slate-200">{lastSale.paymentMode || 'Cash'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 font-bold block">Billed By</span>
+                        <span className="font-bold text-slate-200">{lastSale.generatedBy || 'Admin'}</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="text-xs text-gray-700 mb-4 space-y-1 bg-white p-3.5 rounded-xl border border-green-100">
-                    <div className="flex justify-between border-b border-gray-100 pb-1.5 font-bold">
-                      <span>Invoice ID: {lastSale.id}</span>
-                      <span className="text-blue-700">
-                        Generated by: {lastSale.generatedBy || 'Admin'}
+                  {/* Tabular Items Section with Serial Numbers */}
+                  <div className="p-5 sm:p-6 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-indigo-600" />
+                        <span>Purchased Items Specification</span>
+                      </h4>
+                      <span className="text-xs text-gray-500 font-medium">
+                        {lastSale.items.length} {lastSale.items.length === 1 ? 'line item' : 'line items'}
                       </span>
                     </div>
-                    <p>
-                      <strong>Customer:</strong> {lastSale.customer.name} (
-                      <span className="font-mono">{lastSale.customer.contact}</span>)
-                    </p>
-                    <p>
-                      <strong>Items:</strong>{' '}
-                      {lastSale.items
-                        .map(
-                          (i) =>
-                            `${i.name} [${i.code || '-'}] x${i.qty}${
-                              i.discountPct ? ` (${i.discountPct}% off)` : ''
-                            }`
-                        )
-                        .join(', ')}
-                    </p>
-                    <div className="flex flex-wrap gap-4 pt-1 font-semibold">
-                      <span>
-                        Grand Total: <strong>₹{lastSale.total.toFixed(2)}</strong>
-                      </span>
-                      <span>
-                        Paid: <strong className="text-green-700">₹{lastSale.paid.toFixed(2)}</strong>
-                      </span>
-                      <span>
-                        Balance:{' '}
-                        <strong className={lastSale.balance > 0 ? 'text-red-600' : 'text-green-700'}>
-                          ₹{lastSale.balance.toFixed(2)}
-                        </strong>
-                      </span>
+
+                    <div className="border border-gray-200 rounded-xl overflow-x-auto shadow-2xs">
+                      <table className="min-w-full divide-y divide-gray-200 text-left text-xs">
+                        <thead className="bg-slate-900 text-white font-bold uppercase tracking-wider">
+                          <tr>
+                            <th scope="col" className="px-3 py-3 text-center w-12">
+                              Sr. No.
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left">
+                              Item Code
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left">
+                              Item Description / Name
+                            </th>
+                            <th scope="col" className="px-3 py-3 text-center w-16">
+                              Qty
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-right">
+                              MRP / Rate (₹)
+                            </th>
+                            <th scope="col" className="px-3 py-3 text-center">
+                              Disc (%)
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-right">
+                              Net Rate (₹)
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-right font-black">
+                              Total (₹)
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-100">
+                          {lastSale.items.map((item, idx) => (
+                            <tr
+                              key={idx}
+                              className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}
+                            >
+                              <td className="px-3 py-3 text-center font-bold text-slate-700 bg-slate-50">
+                                {idx + 1}
+                              </td>
+                              <td className="px-4 py-3 font-mono text-slate-600">
+                                {item.code && item.code !== '-' ? item.code : '-'}
+                              </td>
+                              <td className="px-4 py-3 font-semibold text-slate-900">
+                                {item.name}
+                              </td>
+                              <td className="px-3 py-3 text-center font-bold text-slate-800">
+                                {item.qty}
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-600 font-medium">
+                                ₹{(Number(item.basePrice) || 0).toFixed(2)}
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                {item.discountPct ? (
+                                  <span className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-[11px] font-bold">
+                                    {item.discountPct}%
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">0%</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-slate-700">
+                                ₹{(Number(item.price) || 0).toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 text-right font-bold text-slate-900">
+                                ₹{(Number(item.total) || 0).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => handleShareWhatsAppPDF(lastSale)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    >
-                      <Send className="w-4 h-4" />
-                      <span>WhatsApp PDF Invoice</span>
-                    </button>
+                    {/* Calculation Summary Footer */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-gray-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <p>
+                            <strong>Shop Address:</strong> Near ICICI Bank Main Road Ausa
+                          </p>
+                          <p>
+                            <strong>Proprietor:</strong> Khaja Mungle (+91 8055650977)
+                          </p>
+                          <p className="text-[11px] text-gray-400 pt-1">
+                            Thank you for doing business with India Automobiles!
+                          </p>
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => onDownloadPDF(lastSale)}
-                      className="bg-gray-900 hover:bg-black text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Download PDF</span>
-                    </button>
+                        <div className="space-y-1.5 text-xs text-right">
+                          <div className="flex justify-between text-gray-600">
+                            <span>Subtotal:</span>
+                            <span className="font-semibold">₹{(lastSale.subtotal || lastSale.total).toFixed(2)}</span>
+                          </div>
+                          {lastSale.discountAmount ? (
+                            <div className="flex justify-between text-orange-600">
+                              <span>Bill Discount:</span>
+                              <span className="font-semibold">-₹{lastSale.discountAmount.toFixed(2)}</span>
+                            </div>
+                          ) : null}
+                          <div className="flex justify-between text-sm font-black text-gray-900 pt-1 border-t border-gray-200">
+                            <span>Grand Total:</span>
+                            <span className="text-base font-extrabold text-indigo-950">₹{lastSale.total.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-emerald-700 font-bold">
+                            <span>Amount Paid:</span>
+                            <span>₹{lastSale.paid.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs font-bold pt-1 border-t border-dashed border-gray-200">
+                            <span>Remaining Balance:</span>
+                            <span className={lastSale.balance > 0 ? 'text-rose-600 font-black' : 'text-emerald-700'}>
+                              {lastSale.balance > 0 ? `₹${lastSale.balance.toFixed(2)} (Due)` : '₹0.00 (Fully Paid)'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={handleShareDetails}
-                      className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Share2 className="w-4 h-4" />
-                      <span>Share Details</span>
-                    </button>
+                    {/* Action Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-200">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleShareWhatsAppPDF(lastSale)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          <Send className="w-4 h-4" />
+                          <span>WhatsApp PDF Invoice</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => onDownloadPDF(lastSale)}
+                          className="bg-slate-900 hover:bg-black text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download PDF</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => window.print()}
+                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Printer className="w-4 h-4" />
+                          <span>Print Bill</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleShareDetails}
+                          className="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Share2 className="w-4 h-4" />
+                          <span>Share Text</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setLastSale(null)}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+                      >
+                        + Generate New Bill
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
