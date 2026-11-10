@@ -12,6 +12,7 @@ import {
   getLocalSales,
   getLocalUsers,
   saveInventoryItem,
+  bulkSaveInventoryItems,
   deleteInventoryItem,
   saveSaleRecord,
   deleteSaleRecord,
@@ -51,7 +52,7 @@ import { UsersView } from './components/UsersView';
 import { PaymentModal } from './components/PaymentModal';
 import { CustomerLedgerModal } from './components/CustomerLedgerModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
-import { Phone, Mail, Code2 } from 'lucide-react';
+import { Code2, Mail } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<SystemUser | null>(() => getLocalActiveUser());
@@ -79,6 +80,9 @@ export default function App() {
     contact: string;
     name: string;
   } | null>(null);
+
+  // Hidden developer details toggle on Dev icon click
+  const [showDevDetails, setShowDevDetails] = useState(false);
 
   // Toast notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -181,6 +185,21 @@ export default function App() {
     await saveInventoryItem(item);
     setInventory(getLocalInventory());
     showToast(`Inventory item "${item.name}" saved.`, 'success');
+  };
+
+  const handleBulkImportInventory = async (items: InventoryItem[]) => {
+    try {
+      showToast(`Importing ${items.length} items from Excel...`, 'info');
+      const result = await bulkSaveInventoryItems(items);
+      setInventory(getLocalInventory());
+      showToast(
+        `Excel Import Successful! ${result.added} added, ${result.updated} updated (${result.total} total items).`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Bulk import error:', err);
+      showToast('Error importing Excel inventory items. Please check file format.', 'error');
+    }
   };
 
   const handleDeleteInventoryItem = async (itemId: string) => {
@@ -680,6 +699,7 @@ export default function App() {
               <InventoryView
                 inventory={inventory}
                 onSaveItem={handleSaveInventoryItem}
+                onBulkImportItems={handleBulkImportInventory}
                 onDeleteItem={handleDeleteInventoryItem}
                 onRefresh={() => {
                   setInventory(getLocalInventory());
@@ -745,7 +765,7 @@ export default function App() {
             )}
           </main>
 
-          {/* Dynamic Developer Footer */}
+          {/* Application Footer */}
           <footer className="border-t border-slate-200/80 bg-white/90 backdrop-blur-sm py-4 mt-12">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <div className="flex flex-wrap items-center gap-2">
@@ -755,29 +775,44 @@ export default function App() {
                 <span>&bull;</span>
                 <span>Proprietor: <strong className="text-slate-700">Khaja Mungle</strong> (8055650977)</span>
               </div>
-              <div className="inline-flex flex-wrap items-center gap-2.5 bg-slate-50 border border-slate-200 px-3.5 py-1.5 rounded-full shadow-sm">
-                <div className="flex items-center gap-1 font-semibold text-slate-800">
-                  <Code2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Developed by <strong className="text-blue-900 font-bold">Mazhar Sayyed</strong></span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400 font-medium hidden md:inline">
+                  Inventory & Billing System &bull; Live Cloud Synced
+                </span>
+
+                {/* Developer details hidden behind Dev icon; displays on click */}
+                <div className="relative inline-flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowDevDetails(prev => !prev)}
+                    title={showDevDetails ? "Hide Developer Info" : "View Developer Info"}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer shadow-xs border ${
+                      showDevDetails
+                        ? 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <Code2 className={`w-3.5 h-3.5 ${showDevDetails ? 'text-white' : 'text-blue-600'}`} />
+                    <span>Dev</span>
+                  </button>
+
+                  {showDevDetails && (
+                    <div className="animate-in fade-in zoom-in-95 duration-150 flex flex-wrap items-center gap-2 bg-slate-900 text-white text-xs px-3 py-1.5 rounded-xl ml-2 shadow-xl border border-slate-700">
+                      <span className="font-medium text-slate-200">
+                        Developed by <strong className="text-white font-bold">Mazhar Sayyed</strong>
+                      </span>
+                      <span className="text-slate-500">&bull;</span>
+                      <a
+                        href="mailto:Mazharausa@gmail.com"
+                        className="inline-flex items-center gap-1 text-sky-300 hover:text-sky-100 font-semibold underline underline-offset-2 transition-colors"
+                        title="Email Mazhar Sayyed"
+                      >
+                        <Mail className="w-3 h-3 text-sky-400" />
+                        <span>Email: Mazharausa@gmail.com</span>
+                      </a>
+                    </div>
+                  )}
                 </div>
-                <span className="text-slate-300">&bull;</span>
-                <a
-                  href="tel:9975603455"
-                  className="flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-medium transition-colors"
-                  title="Call Mazhar Sayyed"
-                >
-                  <Phone className="w-3 h-3 text-emerald-600" />
-                  <span>9975603455</span>
-                </a>
-                <span className="text-slate-300">&bull;</span>
-                <a
-                  href="mailto:mazharausa@gmail.com"
-                  className="flex items-center gap-1 text-sky-700 hover:text-sky-900 font-medium transition-colors"
-                  title="Email Mazhar Sayyed"
-                >
-                  <Mail className="w-3 h-3 text-sky-600" />
-                  <span>mazharausa@gmail.com</span>
-                </a>
               </div>
             </div>
           </footer>

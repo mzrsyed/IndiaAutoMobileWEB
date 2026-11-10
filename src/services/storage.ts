@@ -15,12 +15,13 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import { InventoryItem, SaleRecord, SystemUser } from '../types';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDIus_LYSd7kTqwik2WLrmGxEWNzJ2_CPw",
-  authDomain: "indiaautomobiles-3439a.firebaseapp.com",
-  projectId: "indiaautomobiles-3439a",
-  storageBucket: "indiaautomobiles-3439a.firebasestorage.app",
-  messagingSenderId: "896983559319",
-  appId: "1:896983559319:web:896423275f9b85ddaccdd2"
+  apiKey: "AIzaSyBg2jZUOhX-606J6fhwq-LnJDAhKmUZtn8",
+  authDomain: "indiaautomobileshopdb.firebaseapp.com",
+  projectId: "indiaautomobileshopdb",
+  storageBucket: "indiaautomobileshopdb.firebasestorage.app",
+  messagingSenderId: "198090020365",
+  appId: "1:198090020365:web:922a0b14d568ac1e3f6744",
+  measurementId: "G-M9XJ4BCRP0"
 };
 
 let app: FirebaseApp | null = null;
@@ -366,6 +367,111 @@ export async function saveInventoryItem(item: InventoryItem): Promise<void> {
       console.warn('Firestore write warning (saved locally):', err);
     }
   }
+}
+
+/**
+ * Bulk save inventory items (e.g., from Excel upload) with batch Firestore sync
+ */
+export async function bulkSaveInventoryItems(newItems: InventoryItem[]): Promise<{ added: number; updated: number; total: number }> {
+  if (!Array.isArray(newItems) || newItems.length === 0) {
+    return { added: 0, updated: 0, total: 0 };
+  }
+
+  const current = getLocalInventory().map(i => ({ ...i }));
+  const invMap = new Map<string, InventoryItem>();
+  current.forEach(i => invMap.set(String(i.id).trim(), i));
+
+  let addedCount = 0;
+  let updatedCount = 0;
+  const processedItems: InventoryItem[] = [];
+
+  for (const rawItem of newItems) {
+    const cleanId = String(rawItem.id || `ITEM_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`).trim();
+    const cleanCode = rawItem.code ? String(rawItem.code).trim() : '';
+    const cleanName = rawItem.name ? String(rawItem.name).trim() : '';
+    if (!cleanName) continue;
+
+    // Check if item exists by exact ID, or matching clean code and name
+    let existingKey: string | undefined = undefined;
+    if (invMap.has(cleanId)) {
+      existingKey = cleanId;
+    } else {
+      for (const [key, existing] of invMap.entries()) {
+        const sameCode = cleanCode && existing.code && existing.code.trim().toLowerCase() === cleanCode.toLowerCase();
+        const sameName = existing.name && existing.name.trim().toLowerCase() === cleanName.toLowerCase();
+        if ((sameCode && sameName) || (sameCode && !existing.name) || (sameName && !cleanCode)) {
+          existingKey = key;
+          break;
+        }
+      }
+    }
+
+    const mrp = typeof rawItem.mrp === 'number' ? rawItem.mrp : Number(rawItem.mrp) || 0;
+    const discount = typeof rawItem.discount === 'number' ? rawItem.discount : Number(rawItem.discount) || 0;
+    let sp = typeof rawItem.sp === 'number' ? rawItem.sp : Number(rawItem.sp) || 0;
+    if (sp <= 0 && mrp > 0) {
+      sp = Number((mrp - (mrp * discount) / 100).toFixed(2));
+    }
+
+    const qty = typeof rawItem.qty === 'number' ? rawItem.qty : Number(rawItem.qty) || 0;
+
+    const itemToSave: InventoryItem = {
+      id: existingKey || cleanId,
+      code: cleanCode || (existingKey ? invMap.get(existingKey)?.code || '-' : '-'),
+      name: cleanName,
+      qty,
+      mrp,
+      discount,
+      sp,
+      dateAdded: rawItem.dateAdded || new Date().toISOString()
+    };
+
+    if (existingKey) {
+      updatedCount++;
+    } else {
+      addedCount++;
+    }
+
+    invMap.set(itemToSave.id, itemToSave);
+    processedItems.push(itemToSave);
+  }
+
+  const finalInventory = Array.from(invMap.values());
+  cachedInventory = finalInventory;
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(finalInventory));
+  } catch (e) {
+    console.warn('LocalStorage save error during bulk inventory upload:', e);
+  }
+
+  broadcastLocalChange('inventory');
+
+  // Push batch to Firestore in chunks of up to 450 items
+  if (db && processedItems.length > 0) {
+    try {
+      const CHUNK_SIZE = 450;
+      for (let i = 0; i < processedItems.length; i += CHUNK_SIZE) {
+        const chunk = processedItems.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach(item => {
+          if (db) batch.set(doc(db, 'inventory', item.id), item);
+        });
+        await batch.commit();
+      }
+    } catch (err) {
+      console.warn('Firestore bulk inventory batch sync warning, saving individually:', err);
+      for (const item of processedItems) {
+        try {
+          if (db) await setDoc(doc(db, 'inventory', item.id), item);
+        } catch {
+          // ignore individual fallback errors
+        }
+      }
+    }
+  }
+
+  return { added: addedCount, updated: updatedCount, total: finalInventory.length };
 }
 
 export async function deleteInventoryItem(itemId: string): Promise<void> {
